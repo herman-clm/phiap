@@ -1,0 +1,338 @@
+---
+title: "Renin_aldo_pred"
+output: html_document
+params:
+  dev: false
+  tocache: false
+  log: 'NA'
+---
+
+
+```{r setup, echo=FALSE, cache=FALSE}
+suppressMessages(library(dplyr))
+suppressMessages(library(dtplyr))
+suppressMessages(library(magrittr))
+suppressMessages(library(tidyr))
+suppressWarnings(library(ggplot2))
+suppressMessages(suppressWarnings(library(RODBC)))
+suppressMessages(suppressWarnings(library(knitr)))
+suppressMessages(suppressWarnings(library(logging)))
+suppressMessages(suppressWarnings(library(ROCR)))
+suppressMessages(suppressWarnings(library(caret)))
+source("../common_anal/R_fxns.R")
+source("../common_anal/RAR_fxns.R")
+```
+
+```{r get_tests, cache=TRUE}
+
+a <- load_RAR()
+attach(a)
+```
+
+```{r explore_tests, eval=FALSE}
+table(res1$RESULT_ITEM_CODE, res1$ORDER_ITEM_CODE)
+```
+```{r something, eval=FALSE}
+res1 %>% filter(ORDER_ITEM_CODE %in% c("C9010005", "ALREACT", "C9010071")) %>%
+  group_by(ORDER_ITEM_CODE, RESULT_ITEM_CODE) %>%
+  summarize(count=n(),
+            range=paste(min(RESULT_DATE), max(RESULT_DATE), sep=" => ")) %>%
+  ungroup() %>% arrange(ORDER_ITEM_CODE, desc(count))
+```
+```{r pick_aldo, eval=FALSE}
+res1 %>% filter(RESULT_ITEM_CODE == "ALDOSTERONE__LC_MS_MS") %>%
+  group_by(ORDER_ITEM_CODE, ORDER_ITEM_DESCRIPTION, ORDER_NAME) %>%
+  summarize(count=n(),
+            range=paste(min(RESULT_DATE), max(RESULT_DATE), sep=" => ")) %>%
+  ungroup() %>% arrange(ORDER_ITEM_CODE, ORDER_ITEM_DESCRIPTION, desc(count)) %>% print.data.frame
+
+```
+# Aldosterone - RESULT_ITEM_CODE %in% c("ALDOSTERONE", "ALDOSTERONE,_LC/MS/MS")
+```{r pick_renin, eval=FALSE}
+res1 %>% filter(RESULT_ITEM_CODE == "RENIN") %>%
+  group_by(ORDER_ITEM_CODE, ORDER_ITEM_DESCRIPTION, ORDER_NAME) %>%
+  summarize(count=n(),
+            range=paste(min(RESULT_DATE), max(RESULT_DATE), sep=" => ")) %>%
+  ungroup() %>% arrange(ORDER_ITEM_CODE, ORDER_ITEM_DESCRIPTION, desc(count)) %>% print.data.frame
+
+res1 %>% filter(RESULT_ITEM_CODE == "DIRECT_RENIN") %>%
+  group_by(ORDER_ITEM_CODE, ORDER_ITEM_DESCRIPTION, ORDER_NAME) %>%
+  summarize(count=n(),
+            range=paste(min(RESULT_DATE), max(RESULT_DATE), sep=" => ")) %>%
+  ungroup() %>% arrange(ORDER_ITEM_CODE, ORDER_ITEM_DESCRIPTION, desc(count)) %>% print.data.frame
+
+res1 %>% filter(RESULT_ITEM_CODE == "RENIN_ACTIVITY") %>%
+  group_by(ORDER_ITEM_CODE, ORDER_ITEM_DESCRIPTION, ORDER_NAME) %>%
+  summarize(count=n(),
+            range=paste(min(RESULT_DATE), max(RESULT_DATE), sep=" => ")) %>%
+  ungroup() %>% arrange(ORDER_ITEM_CODE, ORDER_ITEM_DESCRIPTION, desc(count)) %>% print.data.frame
+
+```
+# Renin - RESULT_ITEM_CODE %in% c("RENIN_ACTIVITY", "RENIN")
+```{r prep_rar, cache=TRUE, dependson=c("get_tests")}
+b <- prep_RAR(a)
+```
+
+```{r explore_RAR, cache=TRUE, dependson=c("get_tests", "prep_rar")}
+
+with(b$rar1, plot(Val.x, ALDOSTERONE, log="xy", las=1))
+abline(a=0,b=20, lty=2,col="red", untf=TRUE)
+abline(a=0,b=30, lty=2,col="red", untf=TRUE)
+abline(a=0,b=60, lty=2,col="red", untf=TRUE)
+
+```
+
+```{r lm_RAR, cache=TRUE, dependson=c("get_tests", "prep_rar")}
+tmp <- b$rar1
+lm.fit <- lm(I(log(ALDOSTERONE/Val.x)) ~ CALCIUM + CARBON_DIOXIDE + CHLORIDE + log(CREATININE) + log(GLUCOSE) +
+             #HEMATOCRIT + HEMOGLOBIN + MEAN_CELLULAR_VOLUME + PLATELETS + WBC + log(RDW) + RED_BLOOD_CELLS +
+             POTASSIUM +  SODIUM + log(UREA_NITROGEN) +
+               spiro + K + 
+              BP_DIASTOLIC + BP_SYSTOLIC +
+             Age + GENDER_MASTER_CODE, data=tmp)
+summary(lm.fit)
+
+
+thresh <- c(20, 30, 40, 60, 90)
+names(thresh) <- thresh
+per_right <- do.call("rbind", lapply(thresh, function(x) {
+  tmp$RAR_hi <- with(tmp, ALDOSTERONE/Val.x > x & ALDOSTERONE > 15 & Val.x < 0.5)
+  tmp$RAR_hi <- factor(tmp$RAR_hi, levels=c(FALSE, TRUE))
+  log.fit <- glm(RAR_hi ~ CALCIUM + CARBON_DIOXIDE + CHLORIDE + #log(CREATININE) + log(GLUCOSE) +
+                   #HEMATOCRIT + HEMOGLOBIN + MEAN_CELLULAR_VOLUME + PLATELETS + WBC + log(RDW) + RED_BLOOD_CELLS +
+                   POTASSIUM + #log(UREA_NITROGEN) + #SODIUM 
+                   spiro + #K + 
+                   BP_DIASTOLIC + #BP_SYSTOLIC +
+                   Age + GENDER_MASTER_CODE, data=tmp, family=binomial, na.action=na.exclude)
+  summary(log.fit)
+  log.probs <- predict(log.fit, type="response")
+  log.preds <- rep(FALSE, length(log.probs))
+  log.preds[which(log.probs > 0.2)] <- TRUE
+  log.tab <- table(log.preds, tmp$RAR_hi)
+  accuracy <- mean(log.preds == tmp$RAR_hi)
+  sens <- log.tab[4]/sum(log.tab[3:4])
+  ppv <- log.tab[4]/sum(log.tab[c(2,4)])
+  spec <- log.tab[1]/sum(log.tab[1:2])
+  npv <- log.tab[1]/(sum(log.tab[c(1,3)]))
+  
+  pr <- prediction(log.probs, tmp$RAR_hi)
+  auc <- performance(pr, measure = "auc")
+  auc <- auc@y.values[[1]]
+
+  list(thresh=x, auc=auc, accuracy=accuracy, sens=sens, spec=spec, ppv=ppv, npv=npv)
+}))
+per_right
+
+
+# pr <- prediction(log.probs, tmp$RAR_hi)
+# prf <- performance(pr, measure = "tpr", x.measure = "fpr")
+# plot(prf)
+
+tmp1 <- tmp[, c("Val.x", "CALCIUM", "CARBON_DIOXIDE", "CHLORIDE", "POTASSIUM",
+                "spiro", "BP_DIASTOLIC", "Age", "GENDER_MASTER_CODE", "ALDOSTERONE")] %>%
+  na.omit
+tmp1$RAR_hi <- with(tmp1, ALDOSTERONE/Val.x > 30 & ALDOSTERONE > 15 & Val.x < 0.5)
+tmp1$RAR_hi <- factor(tmp1$RAR_hi, levels=c(TRUE, FALSE))
+train_samples <- sample(x=1:nrow(tmp1), replace = FALSE, size=nrow(tmp1)*.8)
+training <- tmp1[train_samples,]
+testing <- tmp1[-train_samples,]
+ctrl <- trainControl(method = "repeatedcv", number = 10, savePredictions = TRUE)
+mod_fit <- train(RAR_hi ~ CALCIUM + CARBON_DIOXIDE + CHLORIDE +
+                   POTASSIUM + 
+                   spiro + 
+                   BP_DIASTOLIC +
+                   Age + GENDER_MASTER_CODE, data=training,
+                  method="glm", family="binomial",
+                 trControl = ctrl, tuneLength = 5)
+mod_fit
+pred <- predict(mod_fit, newdata=testing, type="raw")
+confusionMatrix(data=pred, testing$RAR_hi)
+prob <- predict(mod_fit, newdata=testing, type="prob")
+prob_call <- factor(prob[["TRUE"]] > 0.2, levels=c(TRUE, FALSE))
+confusionMatrix(data=prob_call, testing$RAR_hi)
+
+pr <- prediction(prob[["TRUE"]], testing$RAR_hi)
+auc <- performance(pr, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
+```
+
+
+```{r lm_renin, cache=TRUE, dependson=c("get_tests", "prep_rar"), eval=FALSE}
+
+lm.fit <- lm(renin ~ CALCIUM + CARBON_DIOXIDE + CHLORIDE + log(CREATININE) + log(GLUCOSE) +
+             HEMATOCRIT + HEMOGLOBIN + MEAN_CELLULAR_VOLUME + PLATELETS + 
+             POTASSIUM + log(RDW) + RED_BLOOD_CELLS + SODIUM + log(UREA_NITROGEN) +
+             WBC + Age + GENDER_MASTER_CODE, data=b$ren1)
+summary(lm.fit)
+lm.fit <- lm(renin ~ CALCIUM + CARBON_DIOXIDE + CHLORIDE + log(CREATININE) + log(GLUCOSE) +
+             POTASSIUM +  SODIUM + log(UREA_NITROGEN) +
+               #spiro + K + Thiazide + Loop + CCBv + BB + ACE_ARB + 
+             Age + GENDER_MASTER_CODE + BP_DIASTOLIC + BP_SYSTOLIC, data=b$ren1)
+summary(lm.fit)
+              
+# library(glmnet)
+# set.seed(1)
+# tmp1$aldo <- log(tmp1$RESULT_VALUE.x)
+# tmp1$aldo[which(tmp1$aldo == -Inf)] <- NA
+# tmp1 <- tmp1[, which(!names(tmp1) == "RESULT_VALUE.x")] %>% na.omit
+# train <- sample(x=1:nrow(tmp1), size = floor(0.7 * nrow(tmp1)), replace = FALSE)
+# lasso.mod <- cv.glmnet(x=as.data.frame(tmp1[train, which(!names(tmp1) == "aldo")]), y=tmp1$aldo[train],
+#                     alpha=1)
+```
+
+```{r prep_aldo, cache=TRUE, dependson=c("get_tests"), eval=FALSE}
+aldo1 <- res1 %>%
+  filter(RESULT_ITEM_CODE %in% c("ALDOSTERONE", "ALDOSTERONE_LC_MS_MS"))
+
+aldo1 <- merge(aldo1, others, by=c("EMPI"))
+
+# Pick the closest for each component
+aldo1 <- aldo1 %>%
+  group_by(EMPI, RESULT_ITEM_CODE.x, ORDER_START_DATE.x, RESULT_ITEM_CODE.y) %>%
+  slice(which.min(abs(ORDER_START_DATE.y - ORDER_START_DATE.x))) %>%
+  ungroup() %>%
+    dplyr::select(EMPI, GENDER_MASTER_CODE, Age, ORDER_NAME.x, ORDER_START_DATE.x, ORDER_ITEM_CODE.x, ORDER_ITEM_DESCRIPTION.x, Val.x, BP_DIASTOLIC, BP_SYSTOLIC,
+                   K, Loop, BB, CCBv, Thiazide, spiro, ACE_ARB, RESULT_ITEM_CODE.y, Val.y) %>%
+  spread(RESULT_ITEM_CODE.y, Val.y)
+  
+aldo1 %<>%
+  filter(Val.x < 1000)
+
+#numeric_cols <- intersect(c(freq_tests, "RESULT_VALUE.x", "Age", "BP_DIASTOLIC", "BP_SYSTOLIC"), names(aldo1))
+#input_cols <- c(numeric_cols, "GENDER_MASTER_CODE")
+#aldo1 %<>% 
+#  mutate_each_(funs(as.numeric), numeric_cols) %>%
+#  dplyr::select_(.dots=input_cols)
+
+aldo1[['aldo']] <- log(aldo1$Val.x)
+
+lm.fit <- lm(aldo ~ CALCIUM + CARBON_DIOXIDE + CHLORIDE + log(CREATININE) + log(GLUCOSE) +
+             HEMATOCRIT + HEMOGLOBIN + MEAN_CELLULAR_VOLUME + PLATELETS + log(RDW) + RED_BLOOD_CELLS + WBC + 
+             POTASSIUM + SODIUM + log(UREA_NITROGEN) +
+               BP_DIASTOLIC + BP_SYSTOLIC + 
+               spiro + K + 
+             Age + GENDER_MASTER_CODE, data=aldo1)
+summary(lm.fit)
+
+
+# library(glmnet)
+# set.seed(1)
+# aldo1 <- aldo1[, which(!names(aldo1) == "RESULT_VALUE.x")] %>% na.omit
+# train <- sample(x=1:nrow(aldo1), size = floor(0.7 * nrow(aldo1)), replace = FALSE)
+# lasso.mod <- cv.glmnet(x=as.data.frame(aldo1[train, which(!names(aldo1) == "aldo")]), y=aldo1$aldo[train],
+#                    alpha=1)
+```
+
+```{r renin_forest, eval=FALSE}
+library(randomForest)
+
+set.seed(1)
+tmp1 <- ren1
+tmp1 <- tmp1[, which(!names(tmp1) %in% c("RENIN_ACTIVITY", "RESULT_VALUE.x", "RENIN"))]
+tmp1 <- na.omit(tmp1)
+test <- sample(x=1:nrow(tmp1), size=floor(nrow(tmp1)/3), replace = FALSE)
+rf <- randomForest(renin ~ ., data=tmp1,subset = -test,
+                   importance=TRUE)
+yhat.rf = predict(rf, newdata=tmp1[test,])
+mean((yhat.rf - tmp1$RESULT_VALUE.x[test])^2)
+rf
+```
+
+```{r renin_forest2, eval=FALSE}
+set.seed(1)
+tmp1 <- tmp[, c("Age", "GENDER_MASTER_CODE", "RESULT_VALUE.x", "SODIUM", "POTASSIUM", "CHLORIDE", "GLUCOSE", "CREATININE", "UREA_NITROGEN", "CARBON_DIOXIDE", "CALCIUM")] %>%
+  na.omit
+test <- sample(x=1:nrow(tmp1), size=floor(nrow(tmp1)/3), replace = FALSE)
+rf <- randomForest(RESULT_VALUE.x ~ ., data=tmp1,subset = -test,
+                   importance=TRUE)
+yhat.rf = predict(rf, newdata=tmp1[test,])
+mean((yhat.rf - tmp1$RESULT_VALUE.x[test])^2)
+rf
+```
+
+```{r renin_forest3, eval=FALSE}
+set.seed(1)
+tmp1 <- tmp[, c("Age", "GENDER_MASTER_CODE", "RESULT_VALUE.x", "SODIUM", "POTASSIUM", "CHLORIDE", "GLUCOSE", "CREATININE", "UREA_NITROGEN", "CARBON_DIOXIDE", "CALCIUM")] %>%
+  na.omit
+test <- sample(x=1:nrow(tmp1), size=floor(nrow(tmp1)/3), replace = FALSE)
+rf <- randomForest(I(RESULT_VALUE.x ~ ., data=tmp1,subset = -test,
+                   importance=TRUE)
+yhat.rf = predict(rf, newdata=tmp1[test,])
+mean((yhat.rf - tmp1$RESULT_VALUE.x[test])^2)
+rf
+```
+
+```{r aldo_forest, eval=FALSE}
+library(randomForest)
+
+set.seed(1)
+tmp1 <- aldo1[, c("Age", "GENDER_MASTER_CODE", "aldo", "SODIUM", "POTASSIUM", "CHLORIDE", "GLUCOSE", "CREATININE", "UREA_NITROGEN", "CARBON_DIOXIDE", "CALCIUM",
+                  "spiro", "K", "BP_SYSTOLIC", "BP_DIASTOLIC")] %>% na.omit
+#tmp <- aldo1 %>%
+#  dplyr::select(-RENIN_ACTIVITY) %>%
+#  dplyr::select(-HEMATOCRIT, - HEMOGLOBIN, -MEAN_CELLULAR_HEMOGLOBIN, -MEAN_CELLULAR_HEMOGLOBIN_CONCENTRATION,
+#                -MEAN_CELLULAR_VOLUME, -PLATELETS, -WBC, -RDW, -RED_BLOOD_CELLS, -RENIN, -Val.x )%>%
+#  na.omit
+
+train <- sample(x=1:nrow(tmp1), size=floor(nrow(tmp1)* 0.7), replace = FALSE)
+rf <- randomForest(aldo ~ ., data=tmp1,subset = train,
+                   importance=TRUE)
+yhat.rf = predict(rf, newdata=tmp1[-train,])
+mean((yhat.rf - tmp1$aldo[-train])^2)
+rf
+
+tmp1$aldo_hi <- tmp1$aldo > 4
+rf2 <- glm(aldo_hi ~ . - aldo, family="log", data=tmp1,subset = train)
+yhat.rf = predict(rf2, newdata=tmp1[-train,])
+mean((yhat.rf - tmp1$aldo[-train])^2)
+rf2
+
+```
+
+```{r prep_RAR, eval=FALSE}
+rar1 <- res1 %>%
+  filter(RESULT_ITEM_CODE %in% c("ALDOSTERONE", "ALDOSTERONE_LC_MS_MS"))
+
+rar1 <- merge(rar1, others, by=c("EMPI"))
+
+# Pick the closest for each component
+rar1 <- rar1 %>%
+  group_by(EMPI, RESULT_ITEM_CODE.x, ORDER_START_DATE.x, RESULT_ITEM_CODE.y) %>%
+  slice(which.min(abs(ORDER_START_DATE.y - ORDER_START_DATE.x))) %>%
+  ungroup() %>%
+    dplyr::select(EMPI, GENDER_MASTER_CODE, Age, ORDER_NAME.x, ORDER_START_DATE.x, ORDER_ITEM_CODE.x, ORDER_ITEM_DESCRIPTION.x, RESULT_VALUE.x, BP_DIASTOLIC, BP_SYSTOLIC, RESULT_ITEM_CODE.y, RESULT_VALUE.y) %>%
+  spread(RESULT_ITEM_CODE.y, RESULT_VALUE.y)
+  
+rar1$RESULT_VALUE.x <- numericize(rar1$RESULT_VALUE.x, adjust_down = 0.5)
+rar1$RENIN <- numericize(rar1$RENIN, adjust_down=0.5)
+rar1 %<>%
+  filter(RESULT_VALUE.x < 1000)
+rar1$rar <- log(rar1$RESULT_VALUE.x / rar1$RENIN)
+
+numeric_cols <- intersect(c(freq_tests, "RESULT_VALUE.x", "Age", "rar", "BP_DIASTOLIC", "BP_SYSTOLIC"), names(rar1))
+input_cols <- c(numeric_cols, "GENDER_MASTER_CODE")
+rar1 %<>% 
+  mutate_each_(funs(as.numeric), numeric_cols) %>%
+  dplyr::select_(.dots=input_cols)
+rar1$GENDER_MASTER_CODE <- as.factor(rar1$GENDER_MASTER_CODE)
+
+lm.fit <- lm(rar ~ CALCIUM + CARBON_DIOXIDE + CHLORIDE + log(CREATININE) + log(GLUCOSE) +
+                POTASSIUM + SODIUM + log(UREA_NITROGEN) +
+               BP_SYSTOLIC + BP_DIASTOLIC + 
+             WBC + Age + GENDER_MASTER_CODE, data=rar1)
+summary(lm.fit)
+
+
+# library(glmnet)
+# set.seed(1)
+# rar1 <- rar1[, which(!names(rar1) == "RESULT_VALUE.x")] %>% na.omit
+# train <- sample(x=1:nrow(rar1), size = floor(0.7 * nrow(rar1)), replace = FALSE)
+# lasso.mod <- cv.glmnet(x=as.data.frame(rar1[train, which(!names(rar1) == "aldo")]), y=rar1$aldo[train],
+#                     alpha=1)
+```
+
+TODO:
+- add BP
+- add medications
+- Goal: get to 50% variance explained

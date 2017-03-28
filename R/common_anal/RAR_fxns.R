@@ -1,0 +1,301 @@
+library(assertthat)
+suppressMessages(library(data.table))
+
+load_RAR <- function() {
+  
+  res1 <- load_RAR_specific()
+  others <- load_RAR_surround()
+  
+  # Add vitals
+  res_vitals <- load_RAR_vitals()
+  res1 <- merge(res1, res_vitals, by=c("EMPI"), all.x=T)
+  
+  # Those with vitals missing
+  t1 <- res1 %>% filter(is.na(ENC_DATE))
+  
+  # Pick most appropriate vitals
+  res1 %<>% 
+    group_by(EMPI, RESULT_ITEM_CODE, ORDER_START_DATE) %>%
+    slice(which.min(abs(ENC_DATE - ORDER_START_DATE))[1]) %>%
+    ungroup() 
+  
+  #Combine both sets together
+  res1 %<>% rbind(t1)
+  
+  # Add meds
+  a <- load_RAR_meds()
+  
+  #pick highest
+  a %<>%
+    group_by(PK_ENCOUNTER_ID, DRUG_CLASS) %>%
+    summarize(DOSE = max(DOSE, na.rm=T)) %>% ungroup()
+  
+  res1 <- merge(res1, 
+                distinct(a[, c("PK_ENCOUNTER_ID", "DRUG_CLASS", "DOSE")]), 
+                by="PK_ENCOUNTER_ID", all.x=T)
+  res1 %<>% 
+    spread(DRUG_CLASS, DOSE, fill=0)
+  
+  list(others=others, res1=res1)
+}
+load_RAR_specific <- function() {
+  
+  res1 <- fread("~/Downloads/RAR.csv", stringsAsFactors = F, h=T)
+  res1$RESULT_ITEM_CODE <- gsub(" |,|\\/|\\#", "_", res1$RESULT_ITEM_CODE )
+  res1$ORDER_NAME <- gsub(" ", "_", res1$ORDER_NAME )
+  res1$ORDER_START_DATE <- as.POSIXct(res1$ORDER_START_DATE, format = "%d-%b-%Y %H:%M:%S")
+  res1$BIRTH_DATE <- as.POSIXct(res1$BIRTH_DATE, format = "%d-%b-%Y %H:%M:%S")
+  res1$RESULT_DATE <- as.POSIXct(res1$RESULT_DATE, format = "%d-%b-%Y %H:%M:%S")
+  res1$PERFORMED_DATE <- as.POSIXct(res1$PERFORMED_DATE, format = "%d-%b-%Y %H:%M:%S")
+  res1$GENDER_MASTER_CODE <- as.factor(res1$GENDER_MASTER_CODE)
+  res1$EMPI <- as.character(res1$EMPI)
+  
+  res1$prov <- res1$ORDERING_PROV
+  res1$prov[which(res1$prov=="")] <- res1$ADMITTING_PROV[which(res1$prov=="")]
+  
+  res1$Age <- floor(as.numeric(res1$ORDER_START_DATE - res1$BIRTH_DATE)/365.25)
+  
+  res1$Val <- numericize(res1$RESULT_VALUE, adjust_down = 0.5)
+  
+  res1 %<>% 
+    dplyr::select(-BIRTH_DATE, -ORDERING_PROV, -ADMITTING_PROV) %>%
+    distinct()
+  
+  res1
+}
+load_RAR_surround <- function() {
+  res <- read.csv("~/Downloads/RAR_SURROUND.csv", as.is = T, h=T, nrows = Inf)
+  
+  res$RESULT_ITEM_CODE <- gsub(" |,|\\/|\\#", "_", res$RESULT_ITEM_CODE )
+  res$ORDER_NAME <- gsub(" ", "_", res$ORDER_NAME )
+  res$ORDER_START_DATE <- as.POSIXct(res$ORDER_START_DATE, format = "%d-%b-%Y %H:%M:%S")
+  res$RESULT_DATE <- as.POSIXct(res$RESULT_DATE, format = "%d-%b-%Y %H:%M:%S")
+  
+  res$RAR_DT <- as.POSIXct(res$RAR_DT, format = "%d-%b-%Y %H:%M:%S")
+  res$PERFORMED_DATE <- as.POSIXct(res$PERFORMED_DATE, format = "%d-%b-%Y %H:%M:%S")
+  
+  # Pick a subset of tests
+  test_freq <- table(res$RESULT_ITEM_CODE)
+  freq_tests <- c(names(test_freq)[which(test_freq > 3000 & !names(test_freq) %in% c("GLUCOSE_POINT_OF_CARE", "ANION_GAP"))], 
+                  c("RENIN_ACTIVITY", "RENIN", "ALDOSTERONE", "ALDOSTERONE_LC_MS_MS"))
+  others <- res %>% 
+    filter(RESULT_ITEM_CODE %in% freq_tests) %>%
+    distinct()
+  
+  others$Val <- numericize(others$RESULT_VALUE, adjust_down = 0.5)
+  
+  others
+}
+consolidate_rows <- function(x) {
+  # Note that REFILLS are incorrect, because assuming a 1 month course
+  i <- 1
+  
+  while(i < nrow(x)) {
+    if(x$group[i] == x$group[i+1]) {
+      next_stop <- x$ORDER_STOP_DATE[i+1]
+      if (!is.na(next_stop)) {
+        x$ORDER_STOP_DATE[i] <- next_stop
+      } else { # is NA
+        refills <- x$REFILLS[i+1]
+        if(is.na(refills)) {  refills <- 3   }
+        x$ORDER_STOP_DATE[i] <- x$ORDER_START_DATE[i+1] + ((refills + 1) * 2635200) #days
+      }
+      x <- x[-(i+1),]
+    } else {
+      x$ORDER_STOP_DATE[i] <- x$ORDER_START_DATE[i+1]
+      i <- i + 1
+    }
+  }
+  # Massage the last STOP DATES
+  if (is.na(x$ORDER_STOP_DATE[i])) {
+    refills <- x$REFILLS[i]
+    if(is.na(refills)) {  refills <- 3   }
+        x$ORDER_STOP_DATE[i] <- x$ORDER_START_DATE[i] +  ((refills + 1) * 2635200) #days
+  }
+  x
+}
+load_RAR_meds <- function(x="~/Downloads/RHTN_meds.csv") {
+
+  a <- fread(x, stringsAsFactors = F, h=T) 
+  print("Loaded meds")
+  
+  a %<>%
+    dplyr::select(-FK_ENCOUNTER_ID, -SOURCE_LAST_UPDATE_DATE)
+  
+  a$ORDER_START_DATE <- as.POSIXct(trunc(as.POSIXlt(a$ORDER_START_DATE, format = "%d-%b-%Y %H:%M:%S"), "days"))
+  a$ORDER_STOP_DATE <- as.POSIXct(trunc(as.POSIXlt(a$ORDER_STOP_DATE, format = "%d-%b-%Y %H:%M:%S"), "days"))
+  a$REFILLS <- as.numeric(as.character(a$REFILLS))
+  
+  # Hot fix to remove some inpatient injections with different dosing patterns
+  a %<>%
+    filter(!grepl(x=toupper(a$GENERIC_NAME), pattern="INJ"))
+  
+  mask <- a$SIMPLE_GENERIC_NAME == ""
+  if("GENERIC_NAME" %in% names(a) && length(mask)) {
+    a$SIMPLE_GENERIC_NAME[mask] <- sapply(strsplit(x=a$GENERIC_NAME[mask], split=" "), function(x) {
+      paste(x[1:2], collapse=" ")})
+  }
+  
+  mask <- a$DOSE == ""
+  if (length(mask)) {   a$DOSE[mask] <- NA  }
+  
+  # Clean data
+  a %<>%
+    filter(!SIMPLE_GENERIC_NAME %in% c("Buch-Crnslk-Ch Gras-Hydr-Ca",
+                                      "Buchu-Cornsilk-Ch Grass-Hydran",
+                                      "Buchu-Junip-K Gluc-Pars-Uva Ur"))
+  a$DOSE[which(a$SIMPLE_GENERIC_NAME == "Esmolol HCl-Sodium Chloride")] <- "2500-250"
+  
+  # unnest drug name and dose
+  col_split <- "-| in "
+  mask <- with(a, grepl(x=SIMPLE_GENERIC_NAME, pattern=col_split) &
+                 is.na(DOSE)) 
+  
+  a %<>%
+    filter(!mask) %>%
+    transform(SIMPLE_GENERIC_NAME = strsplit(SIMPLE_GENERIC_NAME, col_split),
+              DOSE = strsplit(DOSE, col_split)) %>% 
+    unnest(SIMPLE_GENERIC_NAME, DOSE)
+
+  tmp1 <- a %>%
+    filter(mask) %>%
+    transform(SIMPLE_GENERIC_NAME = strsplit(SIMPLE_GENERIC_NAME, col_split)) %>%
+    transform(DOSE = lapply(SIMPLE_GENERIC_NAME, function(x) { sub(x, pattern = "*", replacement = NA) })) %>%
+    unnest(SIMPLE_GENERIC_NAME, DOSE)
+  
+  a %<>% bind_rows(tmp1)
+    
+  # Pick first term
+  a$SIMPLE_GENERIC_NAME <- sapply(strsplit(x=a$SIMPLE_GENERIC_NAME, split=" "), function(x) {toupper(x[1])})
+  a$SIMPLE_GENERIC_NAME[which(a$SIMPLE_GENERIC_NAME == "HYDROCHLOROTHIAZIDE")] <- "HCTZ"
+  
+  # Fill in NA with mode
+  NAs <- which(is.na(a$DOSE))
+  a$DOSE[NAs] <- sapply(NAs, function(x) {
+    y <- na.omit(a$DOSE[which(a$SIMPLE_GENERIC_NAME == a$SIMPLE_GENERIC_NAME[x])])
+    y <- table(y)
+    names(y)[which.max(y)]
+  })
+  a$DOSE <- as.numeric(as.character(a$DOSE))
+  
+  # Consolidate orders 
+  a %<>%
+    filter(!STATUS_MASTER_DESCRIPTION %in% c("CANCELED", "DISCONTINUED")) %>%
+    mutate(group = paste(EMPI, SIMPLE_GENERIC_NAME, DOSE, sep="_")) %>%
+    arrange(EMPI, SIMPLE_GENERIC_NAME, ORDER_START_DATE)
+  
+  a %<>%
+    group_by(EMPI, SIMPLE_GENERIC_NAME) %>%
+    arrange(ORDER_START_DATE, ORDER_STOP_DATE) %>%
+    do(consolidate_rows(.)) %>%
+    dplyr::select(-EMPI, -SIMPLE_GENERIC_NAME) %>% ungroup()
+  
+  #Classify
+  a$DRUG_CLASS <- NA
+  a$DRUG_CLASS[which(a$SIMPLE_GENERIC_NAME %in% c("FUROSEMIDE", "TORSEMIDE"))] <- "Loop"
+  a$DRUG_CLASS[which(a$SIMPLE_GENERIC_NAME %in% c("AMLODIPINE", "NICARDIPINE", "NIFEDIPINE", "DILTIAZEM"))] <- "CCBv"
+  a$DRUG_CLASS[which(a$SIMPLE_GENERIC_NAME %in% c("DILTIAZEM", "VERAPAMIL"))] <- "CCBh"
+  a$DRUG_CLASS[which(a$SIMPLE_GENERIC_NAME %in% c("ATENOLOL", "CARVEDILOL", "LABETALOL", "ESMOLOL",
+                                                      "METOPROLOL", "NEBIVOLOL", "PROPRANOLOL",
+                                                      "SOTALOL"))] <- "BB"
+  a$DRUG_CLASS[which(a$SIMPLE_GENERIC_NAME %in% c("BENAZEPRIL", "CANDESARTAN", "CAPTOPRIL", "ENALAPRIL",
+                                                      "LISINOPRIL", "LOSARTAN", "OLMESARTAN",
+                                                      "QUINAPRIL", "RAMIPRIL", "VALSARTAN"))] <- "ACE_ARB"
+  a$DRUG_CLASS[which(a$SIMPLE_GENERIC_NAME %in% c("CHLORTHALIDONE", "HCTZ",
+                                                      "METOLAZONE"))] <- "Thiazide"
+  a$DRUG_CLASS[which(a$SIMPLE_GENERIC_NAME %in% c("CLONIDINE"))] <- "A2A"
+  a$DRUG_CLASS[which(a$SIMPLE_GENERIC_NAME %in% c("TERAZOSIN"))] <- "A1ant"
+  a$DRUG_CLASS[which(a$SIMPLE_GENERIC_NAME %in% c("SPIRONOLACTONE", "EPLERENONE",
+                                                      "TRIAMTERENE", "AMILORIDE"))] <- "K_sparing"
+  a$DRUG_CLASS[which(a$SIMPLE_GENERIC_NAME %in% c("HYDRALAZINE"))] <- "hydral"
+  a$DRUG_CLASS[which(a$SIMPLE_GENERIC_NAME %in% c("MINOXIDIL"))] <- "mino"
+  a$DRUG_CLASS[which(a$SIMPLE_GENERIC_NAME %in% c("POTASSIUM"))] <- "K"
+  
+  a %<>%
+    filter(!SIMPLE_GENERIC_NAME %in% c("NA", "NACL", "SODIUM")) %>%
+    distinct()
+  
+#  row.names(a) <- 1:nrow(a)
+  
+  a %<>%
+    dplyr::select(-PATIENT_MASTER_CLASS, -FREQUENCY_NAME, -QUANTITY, -GENERIC_NAME)
+  
+  
+  a
+}
+meds_now_all <- function(x, y) {
+  # What pDOSE is patient ever on?
+  # Make date ranges inclusive on both sides
+  tmp <- inner_join(x, y, by="EMPI")
+  browser()
+  
+  tmp <- do.call('rbind', 
+                 lapply(1:length(start_dates), function(i) { 
+                   y <- meds_now(x, start_dates[i])
+                   y$stop_date <- stop_dates[i]
+                   y
+                 })
+  )
+  tmp
+}
+meds_now <- function(x, DtTm_q) {
+  # What pDOSE is patient on now?
+  
+  tmp <- x %>%
+    filter(ORDER_START_DATE <= DtTm_q & ORDER_STOP_DATE >= DtTm_q ) %>%
+    group_by(EMPI, DRUG_CLASS) %>%
+    summarize(sum_pDOSE = sum(pDOSE, na.rm=T)) %>% 
+    complete(DRUG_CLASS) %>%
+    mutate(start_date = DtTm_q) %>% ungroup()
+  
+  if(nrow(tmp) == 0) {
+    tmp <- data.frame(EMPI = factor(x$EMPI[1], levels=levels(x$EMPI)),
+                      DRUG_CLASS = factor(levels(x$DRUG_CLASS)),
+                      sum_pDOSE = NA,
+                      start_date = DtTm_q) %>% tbl_df()
+  }
+  tmp
+}
+
+load_RAR_vitals <- function(x="~/Downloads/RAR_vitals.csv") {
+  
+  res_vitals <- fread(x, stringsAsFactors = F, h=T)
+  res_vitals$ENC_DATE <- as.POSIXct(res_vitals$ENC_DATE, format = "%d-%b-%Y %H:%M:%S")
+  
+  res_vitals %<>%
+    arrange(EMPI, ENC_DATE) %>%
+    distinct()
+  
+  res_vitals
+}
+
+prep_RAR <- function(a) {
+  ren1 <- prep_RAR_renin(a$res1, a$others)
+  
+  rar1 <- ren1 %>%
+    filter(!is.na(ALDOSTERONE))
+  
+  rar1 %<>%
+    mutate(RAR=ALDOSTERONE / Val.x,
+           lRAR = log(ALDOSTERONE / Val.x))
+  
+  list(ren1=ren1, rar1=rar1)
+}
+prep_RAR_renin <- function(res1, others) {
+  
+  ren1 <- res1 %>%
+    filter(RESULT_ITEM_CODE %in% c("RENIN_ACTIVITY", "RENIN"))
+  
+  ren1 <- merge(ren1, others, by=c("EMPI"))
+  
+  # Pick the closest for each component
+  ren1 <- ren1 %>%
+    group_by(EMPI, RESULT_ITEM_CODE.x, ORDER_START_DATE.x, RESULT_ITEM_CODE.y) %>%
+    slice(which.min(abs(ORDER_START_DATE.y - ORDER_START_DATE.x))) %>%
+    ungroup() %>%
+    dplyr::select(EMPI, GENDER_MASTER_CODE, Age, ORDER_NAME.x, ORDER_START_DATE.x, ORDER_ITEM_CODE.x, ORDER_ITEM_DESCRIPTION.x, Val.x, BP_DIASTOLIC, BP_SYSTOLIC, RESULT_ITEM_CODE.y, Val.y,
+                  K, Loop, BB, CCBv, Thiazide, spiro, ACE_ARB) %>%
+    spread(RESULT_ITEM_CODE.y, Val.y)
+  
+  ren1
+}
