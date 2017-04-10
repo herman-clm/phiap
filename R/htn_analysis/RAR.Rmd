@@ -87,7 +87,7 @@ tmp <- b$rar1
 lm.fit <- lm(I(log(ALDOSTERONE/Val.x)) ~ CALCIUM + CARBON_DIOXIDE + CHLORIDE + log(CREATININE) + log(GLUCOSE) +
              #HEMATOCRIT + HEMOGLOBIN + MEAN_CELLULAR_VOLUME + PLATELETS + WBC + log(RDW) + RED_BLOOD_CELLS +
              POTASSIUM +  SODIUM + log(UREA_NITROGEN) +
-               spiro + K + 
+               #spiro + K + 
               BP_DIASTOLIC + BP_SYSTOLIC +
              Age + GENDER_MASTER_CODE, data=tmp)
 summary(lm.fit)
@@ -101,7 +101,7 @@ per_right <- do.call("rbind", lapply(thresh, function(x) {
   log.fit <- glm(RAR_hi ~ CALCIUM + CARBON_DIOXIDE + CHLORIDE + #log(CREATININE) + log(GLUCOSE) +
                    #HEMATOCRIT + HEMOGLOBIN + MEAN_CELLULAR_VOLUME + PLATELETS + WBC + log(RDW) + RED_BLOOD_CELLS +
                    POTASSIUM + #log(UREA_NITROGEN) + #SODIUM 
-                   spiro + #K + 
+                   # spiro + #K + 
                    BP_DIASTOLIC + #BP_SYSTOLIC +
                    Age + GENDER_MASTER_CODE, data=tmp, family=binomial, na.action=na.exclude)
   summary(log.fit)
@@ -128,8 +128,8 @@ per_right
 # prf <- performance(pr, measure = "tpr", x.measure = "fpr")
 # plot(prf)
 
-tmp1 <- tmp[, c("Val.x", "CALCIUM", "CARBON_DIOXIDE", "CHLORIDE", "POTASSIUM",
-                "spiro", "BP_DIASTOLIC", "Age", "GENDER_MASTER_CODE", "ALDOSTERONE")] %>%
+tmp1 <- tmp[, c("Val.x", "CALCIUM", "CARBON_DIOXIDE", "CHLORIDE", "POTASSIUM",  # "spiro"
+                "BP_DIASTOLIC", "Age", "GENDER_MASTER_CODE", "ALDOSTERONE")] %>%
   na.omit
 tmp1$RAR_hi <- with(tmp1, ALDOSTERONE/Val.x > 30 & ALDOSTERONE > 15 & Val.x < 0.5)
 tmp1$RAR_hi <- factor(tmp1$RAR_hi, levels=c(TRUE, FALSE))
@@ -139,7 +139,7 @@ testing <- tmp1[-train_samples,]
 ctrl <- trainControl(method = "repeatedcv", number = 10, savePredictions = TRUE)
 mod_fit <- train(RAR_hi ~ CALCIUM + CARBON_DIOXIDE + CHLORIDE +
                    POTASSIUM + 
-                   spiro + 
+                  # spiro + 
                    BP_DIASTOLIC +
                    Age + GENDER_MASTER_CODE, data=training,
                   method="glm", family="binomial",
@@ -192,8 +192,8 @@ aldo1 <- aldo1 %>%
   group_by(EMPI, RESULT_ITEM_CODE.x, ORDER_START_DATE.x, RESULT_ITEM_CODE.y) %>%
   slice(which.min(abs(ORDER_START_DATE.y - ORDER_START_DATE.x))) %>%
   ungroup() %>%
-    dplyr::select(EMPI, GENDER_MASTER_CODE, Age, ORDER_NAME.x, ORDER_START_DATE.x, ORDER_ITEM_CODE.x, ORDER_ITEM_DESCRIPTION.x, Val.x, BP_DIASTOLIC, BP_SYSTOLIC,
-                   K, Loop, BB, CCBv, Thiazide, spiro, ACE_ARB, RESULT_ITEM_CODE.y, Val.y) %>%
+    dplyr::select(EMPI, GENDER_MASTER_CODE, Age, ORDER_NAME.x, ORDER_START_DATE.x, ORDER_ITEM_CODE.x, ORDER_ITEM_DESCRIPTION.x, Val.x, BP_DIASTOLIC, BP_SYSTOLIC,  # spiro, K
+                   Loop, BB, CCBv, Thiazide, ACE_ARB, RESULT_ITEM_CODE.y, Val.y) %>%
   spread(RESULT_ITEM_CODE.y, Val.y)
   
 aldo1 %<>%
@@ -211,7 +211,7 @@ lm.fit <- lm(aldo ~ CALCIUM + CARBON_DIOXIDE + CHLORIDE + log(CREATININE) + log(
              HEMATOCRIT + HEMOGLOBIN + MEAN_CELLULAR_VOLUME + PLATELETS + log(RDW) + RED_BLOOD_CELLS + WBC + 
              POTASSIUM + SODIUM + log(UREA_NITROGEN) +
                BP_DIASTOLIC + BP_SYSTOLIC + 
-               spiro + K + 
+              # spiro + K + 
              Age + GENDER_MASTER_CODE, data=aldo1)
 summary(lm.fit)
 
@@ -267,8 +267,8 @@ rf
 library(randomForest)
 
 set.seed(1)
-tmp1 <- aldo1[, c("Age", "GENDER_MASTER_CODE", "aldo", "SODIUM", "POTASSIUM", "CHLORIDE", "GLUCOSE", "CREATININE", "UREA_NITROGEN", "CARBON_DIOXIDE", "CALCIUM",
-                  "spiro", "K", "BP_SYSTOLIC", "BP_DIASTOLIC")] %>% na.omit
+tmp1 <- aldo1[, c("Age", "GENDER_MASTER_CODE", "aldo", "SODIUM", "POTASSIUM", "CHLORIDE", "GLUCOSE", "CREATININE", "UREA_NITROGEN", "CARBON_DIOXIDE", "CALCIUM",  # "spiro", "K"
+                  "BP_SYSTOLIC", "BP_DIASTOLIC")] %>% na.omit
 #tmp <- aldo1 %>%
 #  dplyr::select(-RENIN_ACTIVITY) %>%
 #  dplyr::select(-HEMATOCRIT, - HEMOGLOBIN, -MEAN_CELLULAR_HEMOGLOBIN, -MEAN_CELLULAR_HEMOGLOBIN_CONCENTRATION,
