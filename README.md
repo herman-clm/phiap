@@ -6,13 +6,19 @@
 # Background
 Primary aldosteronism or PA is a hormonal disorder that leads to high blood pressure.  It occurs when the body produces too much of the hormone, aldosterone.  PA is highly treatable, however it is difficult to identify.  It exists in about 5% of high blood pressure cases.
 
+# Meeting 2017-04-07 Selah & Dan
+* went over some of dan's SQL code
+* adjusted goals for first steps
+	* 	Zeroing in on paper Teixeira - Evaluating electronic health record data sources and algorithmic approaches to identify hypertensive individuals.  Looking at 3rd full paragraph on pg 167 that describes algorithm for identifying patients with hypertension.
+*  Dan emphasizes the advantages of querying PDS directly from R or Python scripts, rather than storing intermediate datasets
+
+### TODO's
+* take above mentioned paragraph and reproduce the results
+* attempt to get necessary data through standard DAC avenues. 
+	* PDS/Yuliya/Sunil
+
 # LOG
 Created an Athena Ticket- 3/21/2017 - Get a list of patients with BP medication - Selah/Sunil
-
-# TODO
-* generate a list of distinct guidelines that are currently used to identify aldosterone-ism - Daniel
-* come up with a list of PDS (and perhaps other) data fields that will be relevent to the guidelines - Selah & Sunil
-* attempt to write some queries that select patients in PDS according to the guidelines - Selah & Sunil
 
 # Data Sources
 * Penn Data Store
