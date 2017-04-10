@@ -105,7 +105,8 @@ load_RAR_surround <- function() {
   others
 }
 consolidate_rows <- function(x) {
-  #' Consolidate medication rows. Merge consecutive medication prescriptions together
+  #' Consolidate medication rows. Merge consecutive medication prescriptions together.
+  #' - Estimate ORDER_STOP_DATE as START_DATE  + 1 month per refill + 1
   #' @param x data.frame with medication prescription data for a single patient-drug combination
   #' @return 
   #' 
@@ -120,7 +121,7 @@ consolidate_rows <- function(x) {
       } else { # is NA
         refills <- x$REFILLS[i+1]
         if(is.na(refills)) {  refills <- 3   }
-        x$ORDER_STOP_DATE[i] <- x$ORDER_START_DATE[i+1] + ((refills + 1) * 2635200) #days
+        x$ORDER_STOP_DATE[i] <- x$ORDER_START_DATE[i+1] + ((refills + 1) * 2635200) # Assume refill are monthly (convert refills + 1 -> month)
       }
       x <- x[-(i+1),]
     } else {
@@ -193,7 +194,6 @@ load_RAR_meds <- function(x="~/Downloads/RHTN_meds.csv") {
   col_split <- "-| in "
   mask <- with(a, grepl(x=SIMPLE_GENERIC_NAME, pattern=col_split) & 
                  !grepl(x=DOSE, pattern="-"))
-  
   tmp <- a %>%
     filter(!mask) %>%
     transform(SIMPLE_GENERIC_NAME = strsplit(SIMPLE_GENERIC_NAME, col_split),
