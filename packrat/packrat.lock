@@ -207,6 +207,11 @@ Version: 0.0.1
 Hash: b50baa93cdf537e714e3f200c26f516f
 Requires: data.table, dplyr, lazyeval
 
+Package: e1071
+Source: CRAN
+Version: 1.6-8
+Hash: 20320ec66d4dc608654769145b7c624a
+
 Package: evaluate
 Source: CRAN
 Version: 0.10

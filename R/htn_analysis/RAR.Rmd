@@ -19,6 +19,7 @@ suppressMessages(suppressWarnings(library(knitr)))
 suppressMessages(suppressWarnings(library(logging)))
 suppressMessages(suppressWarnings(library(ROCR)))
 suppressMessages(suppressWarnings(library(caret)))
+suppressMessages(suppressWarnings(library(e1071)))
 source("../common_anal/R_fxns.R")
 source("../common_anal/RAR_fxns.R")
 ```
