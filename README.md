@@ -1,10 +1,26 @@
 # Goal
 * Predict aldosteronism in patients based on EHR data.
  * First: use existing aldostorone identifying guidelines, implement those using SQL and PennDataStore (or any other relevent PennMedicine data resources)
- * Eventually: build a model independent of guidelines to predict aldostoronism as well as possible
+ * Eventually: build a model independent of guidelines to predict aldosteronism as well as possible
 
 # Background
 Primary aldosteronism or PA is a hormonal disorder that leads to high blood pressure.  It occurs when the body produces too much of the hormone, aldosterone.  PA is highly treatable, however it is difficult to identify.  It exists in about 5% of high blood pressure cases.
+
+# Meeting 2017-04-10 Jason & Liat & Selah
+* Liat emphasizes we cannot select a set of medications or ICD codes for a researcher, these need to come from the researcher
+* Liat emphasizes that "selection of a cohort" should be the first step
+* Liat recommends PennOmics as a tool that could be useful here
+
+# Meeting 2017-04-10 Selah & Dan & Sunil
+* Focused on RHTN_meds table from http://bic.med.upenn.edu/cicTeam/Daniel_Herman_Aldosterone_2017_03/blob/master/sql/resistant_htn.sql
+* Three potential improvments to this query
+    * More comprehensive list of medications that are relevent to hypertension
+    * More reliable parsing to identify #pills/day or MG/day of the medication
+    * MOST IMPORTANT - More reliable identification of the end date of a medication
+        * Including unstructured EHR notes here could be key 
+        * Sunil will pull unstructured notes for one MRN so that Dan can take a look at it
+* Eventually want to gather ICD information and BP measurements as well.
+* Looking exclusively at outpatient data from 2015 and 2016
 
 # Meeting 2017-04-07 Selah & Dan
 * went over some of dan's SQL code
