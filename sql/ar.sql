@@ -1,3 +1,9 @@
+-- Preliminary attempts at predicting aldosterone to renin lab results
+---- Hihg aldosterone to renin values are indicative of Primary Aldosteronism (PA)
+-- Using information other than aldosterone labs as inputs for prediction
+---- This includes orders, medications, and medications
+
+-- pulling aldosteronism specific lab data 
 DROP TABLE RAR;
 CREATE TABLE RAR NOLOGGING AS
 select /*+ALL_ROWS*/ 
@@ -55,6 +61,9 @@ select count(*) from RAR; --17395
 select count(distinct(EMPI)) from RAR; --7595
 select * from RAR;
 
+
+
+-- pulling NON aldosterone specific lab information
 DROP TABLE RAR_surround;
 CREATE TABLE RAR_surround NOLOGGING AS
 SELECT /*+ALL_ROWS*/  

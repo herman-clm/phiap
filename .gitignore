@@ -7,3 +7,6 @@ packrat/src*/
 *_cache*
 *.html
 data/
+packrat/src/
+*_files/
+

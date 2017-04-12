@@ -1,6 +1,21 @@
+-- Exploring data that may be relevent to identifying patients with resistant hyper tension
 -- Creates tables:
 -- RHTN_meds
+---- pulls out patient orders that are for medications relevant to hypertension
+---- keyed by patient, medication, start date
+
 -- RHTN_vitals
+---- blood pressure measurements for patients
+---- ??? multiple measurements for a given patient
+
+-- Runs some exploratory statistics on these two tables
+
+-- Uses Penn Data Store's ODS database
+
+-- ??? how long does it take to run
+-- ??? how many rows do these queries result in
+
+
 
 --Specific antiHTN meds
 DROP TABLE RHTN_meds;
