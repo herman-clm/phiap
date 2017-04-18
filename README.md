@@ -47,7 +47,8 @@ Primary aldosteronism or PA is a hormonal disorder that leads to high blood pres
 # Meeting 2017-04-07 Selah & Dan
 * went over some of dan's SQL code
 * adjusted goals for first steps
-	* 	Zeroing in on paper Teixeira - Evaluating electronic health record data sources and algorithmic approaches to identify hypertensive individuals.  Looking at 3rd full paragraph on pg 167 that describes algorithm for identifying patients with hypertension.
+	* Zeroing in on paper Teixeira - Evaluating electronic health record data sources and algorithmic approaches to identify hypertensive individuals.  Looking at 3rd full paragraph on pg 167 that describes algorithm for identifying patients with hypertension.
+    * [Teixera paper](http://doi.org/10.1093/jamia/ocw071)
 *  Dan emphasizes the advantages of querying PDS directly from R or Python scripts, rather than storing intermediate datasets
 
 ### TODO's
