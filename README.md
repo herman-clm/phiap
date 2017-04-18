@@ -13,6 +13,7 @@ Primary aldosteronism or PA is a hormonal disorder that leads to high blood pres
     * Selah file ticket
 * finalize preliminary list of hyptertension ICD codes - Dan
     * reference Teixera paper, get from Dan
+    * [Teixera paper](http://doi.org/10.1093/jamia/ocw071)
 * put together list of medications from given cohort - Sunil (Selah file ticket)
     * cohort is a random subset of the following: 2yrs, 2+ encounters, 2+ blood pressure medication, outpatient only
         * size is TBD  ~1000k
@@ -25,6 +26,7 @@ Primary aldosteronism or PA is a hormonal disorder that leads to high blood pres
 ### Future
 * Dan will do chart reviews on ~100 patients
 * Get table of patients, all their meds, blood pressure medications, ICD codes, use to predict Dan's chart review results in a manner similar to Teixera paper
+    * [Teixera paper](http://doi.org/10.1093/jamia/ocw071)
 
 # Meeting 2017-04-10 Jason & Liat & Selah
 * Liat emphasizes we cannot select a set of medications or ICD codes for a researcher, these need to come from the researcher
