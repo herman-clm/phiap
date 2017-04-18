@@ -45,6 +45,7 @@ Created an Athena Ticket- 3/21/2017 - Get a list of patients with BP medication 
     * Consider using MedEx to extract dose information from prescription tables AND/OR from Notes
   * Notes (for NLP)
   * Demographics
+  * Schema: https://www.med.upenn.edu/dac/assets/user-content/images/ODS_Schema_4_1.jpg
 
 # Initial goals
 * Collect medication information
