@@ -20,11 +20,11 @@ Primary aldosteronism or PA is a hormonal disorder that leads to high blood pres
     * from the final cohort, generate a list of all blood pressure medications, send it to dan
     * final product is list of medications
     * Selah file ticket
-* use NLP or regex to parse out the dosage/day info - Selah
+* use NLP or regex to parse out the dosage/day info - Selah or Yancy
 
 ### Future
 * Dan will do chart reviews on ~100 patients
-* Get table of patients, all their meds, blood pressure medications, ICD codes, use to predict Dan's chart review results
+* Get table of patients, all their meds, blood pressure medications, ICD codes, use to predict Dan's chart review results in a manner similar to Teixera paper
 
 # Meeting 2017-04-10 Jason & Liat & Selah
 * Liat emphasizes we cannot select a set of medications or ICD codes for a researcher, these need to come from the researcher
