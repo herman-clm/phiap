@@ -16,7 +16,6 @@ Primary aldosteronism or PA is a hormonal disorder that leads to high blood pres
 * Sunil - randomized version of old cohort, and send to Dan
 	* Dan - dan do chart review on some of these
 * Sunil - get free text notes for 1000 cohort
-	* Dan - explore freetext notes
 * Selah - improve medication parsing (hold off) until medications
 	* manual inspection of accuracy… get a number
 	* investigate papers and suggestions
