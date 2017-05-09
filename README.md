@@ -15,7 +15,7 @@ Primary aldosteronism or PA is a hormonal disorder that leads to high blood pres
     * reference Teixera paper, get from Dan
     * [Teixera paper](http://doi.org/10.1093/jamia/ocw071)
 * put together list of medications from given cohort - Sunil (Selah file ticket)
-    * cohort is a random subset of the following: 2yrs, 2+ encounters, 2+ blood pressure medication, outpatient only
+    * cohort is a random subset of the following: 2yrs, 2+ encounters, 2+ blood pressure ~~medication~~ measurements, outpatient only
         * size is TBD  ~1000k
     * select only patients with ICD codes related to hypertension
     * from the final cohort, generate a list of all blood pressure medications, send it to dan
