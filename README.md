@@ -75,6 +75,12 @@ Primary aldosteronism or PA is a hormonal disorder that leads to high blood pres
 # LOG
 Created an Athena Ticket- 3/21/2017 - Get a list of patients with BP medication - Selah/Sunil
 
+# IRB Compliance HIPAA Info Link
+http://www.med.upenn.edu/dac/irb-compliance.html
+
+# PDS Info., DataModel and Data Dictionary
+http://www.med.upenn.edu/dac/penn-data-store-warehouse.html
+
 # Data Sources
 * Penn Data Store
   * Diagnosis codes
