@@ -1,3 +1,5 @@
+IRB #827260
+
 # Goal
 * Predict aldosteronism in patients based on EHR data.
  * First: use existing aldostorone identifying guidelines, implement those using SQL and PennDataStore (or any other relevent PennMedicine data resources)
