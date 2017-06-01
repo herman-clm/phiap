@@ -10,3 +10,7 @@ data/
 packrat/src/
 *_files/
 
+.DS_Store
+dat
+*#*
+

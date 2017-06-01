@@ -1,6 +1,6 @@
 PackratFormat: 1.4
 PackratVersion: 0.4.8.1
-RVersion: 3.3.3
+RVersion: 3.4.0
 Repos: BioCsoft=https://bioconductor.org/packages/3.2/bioc,
     BioCann=https://bioconductor.org/packages/3.2/data/annotation,
     BioCexp=https://bioconductor.org/packages/3.2/data/experiment,
@@ -342,7 +342,7 @@ Requires: R6, curl, jsonlite, mime, openssl
 Package: irlba
 Source: CRAN
 Version: 2.1.2
-Hash: 23fb0f166f3a2bdc2ac7b014b94b57a7
+Hash: cdc868ef643df6318f7c30d3c1695168
 
 Package: iterators
 Source: CRAN
