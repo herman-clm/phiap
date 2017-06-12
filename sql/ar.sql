@@ -6,7 +6,7 @@
 -- pulling aldosteronism specific lab data 
 DROP TABLE RAR;
 CREATE TABLE RAR NOLOGGING AS
-select /*+ALL_ROWS*/ 
+select /*+ALL_ROWS*/
 PI.EMPI, 
 PI.PATIENT_IDENTIFIER, 
 P.Birth_Date,
@@ -57,18 +57,17 @@ where
   AND ORDER_ITEM_CODE NOT IN ('C9009997', 'Q19573', 'C9009995', 'C9009990', '83497A', 'C9010004') -- AVS, ALDOLASE, ...
 ;  
 
-select count(*) from RAR; --17395
-select count(distinct(EMPI)) from RAR; --7595
+select count(*) from RAR; --18039
+select count(distinct(EMPI)) from RAR; --7845
 select * from RAR;
-
 
 
 -- pulling NON aldosterone specific lab information
 DROP TABLE RAR_surround;
 CREATE TABLE RAR_surround NOLOGGING AS
-SELECT /*+ALL_ROWS*/  
-PI.EMPI, 
-PI.PATIENT_IDENTIFIER, 
+SELECT distinct /*+ALL_ROWS*/
+PI.EMPI,
+PI.PATIENT_IDENTIFIER,
 RAR_distinct.order_start_date as RAR_dt,
 O.ORDER_NAME, 
 O.ORDER_START_DATE, 
@@ -99,53 +98,69 @@ JOIN ODS.R_RESULT_ITEM OResI
   ON ORes.FK_RESULT_ITEM_ID = OResI.PK_Result_Item_ID
 LEFT OUTER JOIN ODS.Order_Performed OP
   ON O.PK_Order_ID = OP.FK_Order_ID
-WHERE 
+WHERE
   PI.Identifier_Facility = 'HUP'
   AND OI.ORDER_ITEM_MASTER_PRIMARY_TYPE = 'LABORATORY'
+  AND E.PATIENT_MASTER_CLASS = 'OUTPATIENT'
   AND abs((O.ORDER_START_DATE - RAR_distinct.ORDER_START_DATE)) <= 7
 ;
 
-select count(*) from RAR_surround; --222201
+select count(*) from RAR_surround; --258624
 select * from RAR_surround;
 
 -- Lets get medications
-DROP TABLE RAR_meds_current;
+DROP TABLE RAR_meds;
 CREATE TABLE RAR_meds NOLOGGING AS
-select /*+ALL_ROWS*/ 
-        RAR_distinct.PK_ENCOUNTER_ID,
+select /*+ALL_ROWS*/
+        RAR_distinct.EMPI,
+        E.ENC_DATE,
+        O.ORDER_START_DATE,
         OM.Dose,
         OM.Frequency_Name,
         M.SIMPLE_GENERIC_NAME,
         M.GENERIC_NAME,
         M.AMOUNT
-FROM (select distinct PK_ENCOUNTER_ID
+FROM (select distinct EMPI
         from RAR) RAR_distinct
+join ODS.Patient_Identifiers PI
+  ON PI.empi = RAR_distinct.empi
+join ODS.Patient P
+  ON P.PK_Patient_ID = PI.FK_Patient_ID
+join ODS.Encounter PARTITION (EPIC) E
+  ON E.FK_Patient_ID = P.PK_Patient_ID
 JOIN ODS.ORDERS PARTITION(EPIC) O
-  ON RAR_distinct.PK_ENCOUNTER_ID = O.FK_ENCOUNTER_ID
+  ON E.PK_ENCOUNTER_ID = O.FK_ENCOUNTER_ID
 JOIN ODS.ORDER_MED OM
   ON O.PK_Order_ID = OM.FK_Order_ID
 JOIN ODS.R_Medication M
   ON OM.FK_Medication_ID = M.PK_Medication_ID
-WHERE --THERAPEUTIC_CLASS = 'Cardiovascular Agents'
-  (PHARMACY_CLASS IN ('Antihypertensive', 'Calcium blockers', 'Beta blockers', 'Diuretics') 
+WHERE
+  (PHARMACY_CLASS IN ('Antihypertensive', 'Calcium blockers', 'Beta blockers', 'Diuretics')
   OR PHARMACY_SUBCLASS = 'Potassium')
+  AND E.PATIENT_MASTER_CLASS = 'OUTPATIENT'
+  AND OM.SOURCE_CODE = 'EPIC' AND P.SOURCE_CODE = 'EPIC'
 ;
 
 --STATUS (Labs from ORder_Result_table [EPIC: FINAL, CERNER: VERIFIED/AUTOVERIFIED]
 
-select count(*) from RAR_meds; #500
+select count(*) from RAR_meds; --1.5 M
+select count(distinct(EMPI)) from RAR_meds; # 5931
 select * from RAR_meds
-order by PK_ENCOUNTER_ID, simple_generic_name;
+order by EMPI, simple_generic_name;
 
 
 -- Look for vital signs
 DROP TABLE RAR_vitals;
 CREATE TABLE RAR_vitals NOLOGGING AS
-select /*+ALL_ROWS*/ RAR_distinct.*, 
+select /*+ALL_ROWS*/
+  RAR_distinct.EMPI,
       ENC_DATE,
         BP_Diastolic,
-    BP_Systolic
-FROM (select distinct EMPI
+    BP_Systolic,
+    RET.ENC_TYPE_MASTER_DESCRIPTION,
+    EVS.PATIENT_MASTER_CLASS
+FROM
+  (select distinct EMPI
         from RAR) RAR_distinct
 JOIN ODS.Patient_Identifiers PI
   ON RAR_distinct.EMPI = PI.EMPI
@@ -153,9 +168,11 @@ JOIN ODS.Patient P
   ON P.PK_Patient_ID = PI.FK_Patient_ID
 JOIN ODS.ENCOUNTER PARTITION(EPIC) EVS
   ON EVS.FK_Patient_ID = P.PK_Patient_ID
---  AND ENC_TYPE_MASTER_DESCRIPTION = 'OFFICE VISITS';
-WHERE EVS.ENC_DATE > '01-Jan-2014'
-  AND BP_SYSTOLIC IS NOT NULL;
-  
-  select * from ODS.ENCOUNTER PARTITION(EPIC) where rownum < 10;
-  select count(*) from RAR_vitals; -- 750
+JOIN ODS.R_ENCOUNTER_TYPE RET
+  ON EVS.FK_ENC_TYPE_ID = RET.PK_ENC_TYPE_ID
+WHERE
+  BP_SYSTOLIC IS NOT NULL
+;
+
+select count(*) from RAR_vitals; -- 2181686
+select * from RAR_vitals;
