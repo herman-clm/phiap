@@ -42,14 +42,35 @@ where
 ORDER BY EMPI, ENC_DATE;
 --DX TYPE field for inpatient
 
-select count(distinct(EMPI)) from aldo_dx;  -- #776
+select count(distinct(EMPI)) from aldo_dx;  -- #834
 select * from aldo_dx
 order by EMPI, ENC_DATE; -- #23794
 
-
-select count(distinct(EMPI)) 
+select count(distinct(EMPI))
 from aldo_dx
-where ENC_DATE > to_date('01-Jan-2014', 'dd-mon-yyyy');  -- #474
+where ENC_DATE > to_date('01-Jan-2014', 'dd-mon-yyyy');  -- #535
+
+-- Find all MRNs for EMPI
+DROP TABLE aldo_empi_mrn;
+CREATE TABLE aldo_empi_mrn NOLOGGING AS
+select DISTINCT /*+ALL_ROWS*/
+  aldo_dx.EMPI,
+  PI.IDENTIFIER_NAME,
+  PI.IDENTIFIER_FACILITY,
+  PI.PATIENT_IDENTIFIER,
+  PI.PATIENT_IDENTIFIER_NUM,
+  PI.EMPI_NUM,
+  ACTIVE_YN
+  from aldo_dx
+JOIN ODS.PATIENT_IDENTIFIERS PI
+    ON PI.EMPI = aldo_dx.EMPI
+WHERE IDENTIFIER_NAME LIKE '%MRN%'
+;
+
+select count(distinct(EMPI))
+  from aldo_empi_mrn;
+select * from aldo_empi_mrn;
+
 
 DROP TABLE aldo_dx_calc;
 CREATE TABLE aldo_dx_calc NOLOGGING AS
@@ -73,7 +94,7 @@ aldo_dx.ENC_DATE > to_date('01-Jan-2014', 'dd-mon-yyyy');
 select * from aldo_dx2; #474
 select count(distinct(EMPI)) 
 from aldo_dx2
-where ENC_DATE > to_date('01-Jan-2014', 'dd-mon-yyyy');  -- #393
+where ENC_DATE > to_date('01-Jan-2014', 'dd-mon-yyyy');  -- #446
 
 -- Filter out more specific cases
 DROP TABLE aldo_dx2;
@@ -84,9 +105,10 @@ join aldo_dx_calc
   ON aldo_dx_calc.EMPI = aldo_dx.EMPI
 where COUNT > 1;
 
-select * from aldo_dx2; --474
+select * from aldo_dx2;
+select count(*) from aldo_dx2;
 select count(distinct(EMPI)) 
-from aldo_dx2; --593
+from aldo_dx2; --644
 
 
 --Find first dx for each patient
@@ -98,7 +120,7 @@ select EMPI,
 from aldo_dx2
 group by EMPI;
 
-select count(*) from aldo_dx_n; --593
+select count(*) from aldo_dx_n; --644
 select * from aldo_dx_n;
 
 --Find encounters before aldo_dx
