@@ -65,6 +65,11 @@ min(ORDER_START_DATE),
 max(ORDER_START_DATE)
 from RHTN_meds; --727326
 
+
+# To complete the hyptertension medication list
+#-          Look for *amlodipine* OR *losartan*
+
+
 /*
 COUNT	COUNT(DISTINCT(EMPI))	MIN(ORDER_START_DATE)	MAX(ORDER_START_DATE)
 727326	155659	01-DEC-2014 00:00:00	30-JUN-2017 00:00:00

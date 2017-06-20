@@ -1,3 +1,5 @@
+IRB #827260
+
 # Goal
 * Predict aldosteronism in patients based on EHR data.
  * First: use existing aldostorone identifying guidelines, implement those using SQL and PennDataStore (or any other relevent PennMedicine data resources)
@@ -5,6 +7,12 @@
 
 # Background
 Primary aldosteronism or PA is a hormonal disorder that leads to high blood pressure.  It occurs when the body produces too much of the hormone, aldosterone.  PA is highly treatable, however it is difficult to identify.  It exists in about 5% of high blood pressure cases.
+
+
+# Meeting 2017-06-01 Dan, Selah, Sunil
+## Things to show/discuss
+* complete medication list!
+* collecting tables we need for analysis, see [hypertension_table_prep.txt](hypertension_table_prep.txt)
 
 # Meeting 2017-05-09 Dan & Sunil & Selah & Yancy?
 ## TODO
