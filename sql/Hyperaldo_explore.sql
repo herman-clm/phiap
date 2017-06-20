@@ -67,14 +67,33 @@ select aldo_dx.*
 from aldo_dx
 join aldo_dx_calc
   ON aldo_dx_calc.EMPI = aldo_dx.EMPI
-where COUNT > 1 and
-aldo_dx.ENC_DATE > to_date('01-Jan-2014', 'dd-mon-yyyy');  
+where COUNT > 1 
+and
+aldo_dx.ENC_DATE >= to_date('01-Jan-2005', 'dd-mon-yyyy')  
+;
 
-select * from aldo_dx2; #474
-select count(distinct(EMPI)) 
+select * from aldo_dx2 order by ENC_DATE;
+
+-- When switch to ICD10
+with 
+c1_table
+AS
+(
+select 
+substr(CODE, 1,1) as C1,
+CODING_DATE
 from aldo_dx2
-where ENC_DATE > to_date('01-Jan-2014', 'dd-mon-yyyy');  -- #393
+) 
+select C1,
+min(CODING_DATE),
+max(CODING_DATE)
+from c1_table
+group by C1;
 
+select count(distinct(EMPI)) --584
+from aldo_dx2
+--where ENC_DATE > to_date('01-Jan-2014', 'dd-mon-yyyy');  -- #393
+;
 -- Filter out more specific cases
 DROP TABLE aldo_dx2;
 CREATE TABLE aldo_dx2 NOLOGGING AS
@@ -84,9 +103,9 @@ join aldo_dx_calc
   ON aldo_dx_calc.EMPI = aldo_dx.EMPI
 where COUNT > 1;
 
-select * from aldo_dx2; --474
+select * from aldo_dx2;
 select count(distinct(EMPI)) 
-from aldo_dx2; --593
+from aldo_dx2; --584
 
 
 --Find first dx for each patient
@@ -98,7 +117,7 @@ select EMPI,
 from aldo_dx2
 group by EMPI;
 
-select count(*) from aldo_dx_n; --593
+select count(*) from aldo_dx_n; --584
 select * from aldo_dx_n;
 
 --Find encounters before aldo_dx
@@ -109,7 +128,7 @@ select distinct
   E.ENC_DATE,
   E.PK_ENCOUNTER_ID,
   E.VISIT_NUMBER_NUM,
-  ENC_TYPE_MASTER_DESCRIPTION
+  ET.ENC_TYPE_MASTER_DESCRIPTION
 from aldo_dx_n adn
 JOIN ODS.PATIENT_IDENTIFIERS PARTITION (EPIC) PI
       ON PI.EMPI = adn.EMPI
@@ -147,8 +166,8 @@ select * from aldo_predx_n;
 select  
 min(N_PREDX_ENCS), median(N_PREDX_ENCS), max(N_PREDX_ENCS) from aldo_predx_n;
 
-select count(*) from aldo_predx_n; --574
-select count(*) 
+select count(*) from aldo_predx_n; --569
+select count(*) --380
 from
 (
 select *
@@ -168,6 +187,7 @@ where YEARS_PREDX > 2 and N_PREDX_LABS > 2);
 
 --Look for predx labs (Need to specify a little better)
 DROP TABLE aldo_predx_labs;
+
 CREATE TABLE aldo_predx_labs NOLOGGING AS
 select /*+ALL_ROWS*/ EMPI, 
     FIRST_DX,
@@ -176,17 +196,19 @@ select /*+ALL_ROWS*/ EMPI,
 from aldo_predx apdx
 JOIN ODS.ORDERS PARTITION (EPIC) O
    ON apdx.PK_ENCOUNTER_ID = O.FK_ENCOUNTER_ID
---JOIN ODS.R_ORDER_TYPE OT
---    ON OT.PK_ORDER_TYPE_ID = O.FK_ORDER_TYPE_ID
+JOIN ODS.R_ORDER_TYPE OT
+    ON OT.PK_ORDER_TYPE_ID = O.FK_ORDER_TYPE_ID
 JOIN ODS.Order_Result PARTITION(EPIC) ORes
     ON ORes.FK_Order_ID = O.PK_Order_ID
 JOIN ODS.R_RESULT_ITEM RI
     ON RI.PK_Result_Item_ID = ORes.FK_Result_Item_ID
-WHERE --OT.ORDER_TYPE_CODE = 'Lab' AND
--- Ores.....STATUS = 'FINAL' ????
-  LOINC_CODE = '2823-3';   
+WHERE OT.ORDER_TYPE_CODE = 'Lab'
+;
+--AND
+  --ORes......STATUS = 'FINAL' ????
+  --LOINC_CODE = '2823-3';   
    
-select count(*) from aldo_predx_labs; #31500
+select count(*) from aldo_predx_labs; #126218
 select * from aldo_predx_labs;
    
 --Count earlier labs (probably should focus on non-acute labs...)
@@ -294,7 +316,7 @@ select * from order_med where rownum < 50;
 
 --STATUS (Labs from ORder_Result_table [EPIC: FINAL, CERNER: VERIFIED/AUTOVERIFIED]
 
-select count(*) from aldo_predx_meds; #10347
+select count(*) from aldo_predx_meds; #8945
 select * from aldo_predx_meds
 order by empi, enc_date, simple_generic_name;
 
