@@ -13,7 +13,7 @@ dfg['regex_ratio'] = dfg.regex_matches/dfg.word_count
 
 d = pd.to_datetime('today').strftime("%Y%m%d")
 
-dfg.to_csv(proj_dir + "data/collapsed_regex_{}.csv".format(d))
+dfg.to_csv(proj_dir + "data/collapsed_regex_{}_deid.csv".format(d))
    
 
 
