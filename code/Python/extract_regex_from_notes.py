@@ -33,16 +33,24 @@ patt = re.compile(r'[^(]{12}(\d+\))(.{4})sdfsdfsd')
 res = patt.findall(note)
 
 # patt = re.compile(r'.{11}hyper.{11}')
-patt = re.compile(r'.{20}(?!pulm\w*\W*\w+\W+)hypertension.{20}', re.IGNORECASE)
+patt = re.compile(r'.{,20}(?!pulm\w*\W*\w+\W+)\bhypertension.{,20}', re.IGNORECASE)
 df['regex1'] = df['Note_Text'].astype(str).apply(lambda s: patt.findall(s)) 
 df['regex1_cnt'] = df.regex1.apply(len)
-patt = re.compile(r'.{20}(?!pulm\w*\W*\w+\W+)HTN.{20}', re.IGNORECASE)
+
+#patt = re.compile(r'.{,20}(?!pulm\w*\W*\w+\W+)HTN.{,20}', re.IGNORECASE)
+patt = re.compile(r'.{,20}(?!pulm\w*\W*\w+\W+)\bHTN.{,20}', re.IGNORECASE)
 df['regex2'] = df['Note_Text'].astype(str).apply(lambda s: patt.findall(s)) 
 df['regex2_cnt'] = df.regex2.apply(len)
 
 
+df_deid_dict = pd.read_csv(proj_dir + "data/MRN_deid_dict.csv")
+
+df_deid = df.merge(df_deid_dict, left_on='MRN', right_on='MRN_HUP', how="left").drop(['MRN', 'MRN_HUP'], axis=1)
+cols = df_deid.columns.tolist()
+cols = cols[-1:] + cols[:-1]
+
 notesdatafileregex = proj_dir + "data/regex_notes_{}.csv".format(d)
-df.to_csv(notesdatafileregex, index=False)
+df_deid[cols].to_csv(notesdatafileregex, index=False)
 dfqc = pd.read_csv(notesdatafileregex)
     
 #import re
