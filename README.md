@@ -13,6 +13,7 @@ Primary aldosteronism or PA is a hormonal disorder that leads to high blood pres
 * compiling data on the patient level
 * look at regex results
 * go over and close gitlab issues
+* note concatination
 * next steps
 
 
