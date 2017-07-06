@@ -6,17 +6,7 @@ proj_dir = '/home/selah/Projects/Daniel_Herman_Aldosterone_2017_03/'
 regexfile = proj_dir + "data/collapsed_regex_20170621_deid.csv"
 df_regex = pd.read_csv(regexfile)
 
-
-##### DIAGNOSIS ICD9 ########
-
-#TODO - unique and all ICD9 diagnosises for a patient
-
-
-##### MEDICATIONS #########
-
-
 #TODO - discuss how to handle Nan's
-
 
 dfmed = pd.read_csv(proj_dir + "data/2_meds.csv")
 dfhypmed = pd.read_excel(proj_dir + "data/UNIQUE_HYPERTENSION_MEDICATIONS.xlsx")
@@ -31,8 +21,9 @@ dfmedug = dfmedu.groupby('MRN_HUP').agg({'is_hyp_med':['sum','count']})
 dfmedug.columns = ['hyp_meds_uniq_count', 'all_meds_uniq_count']
 
 dfmedcounts = dfmedg.merge(dfmedug, left_index=True, right_index=True)
+
 d = pd.to_datetime('today').strftime("%Y%m%d")
-dfmedcounts.to_csv(proj_dir + "data/patient_level_data_{}_deid.csv".format(d))
+dfmedcounts.to_csv(proj_dir + "data/collapsed_meds_{}.csv".format(d))
 
 
 #General purpose collapsing on multilevel column names resulting from agg
