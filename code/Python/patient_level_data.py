@@ -1,3 +1,5 @@
+#cd /home/selah/Projects/Daniel_Herman_Aldosterone_2017_03/code/Python
+
 import pandas as pd
 import numpy as np
 
@@ -21,3 +23,5 @@ df = df.merge(dfm, on='MRN_HUP', how='left')
 df.fillna(0, inplace=True)
 
 
+d = pd.to_datetime('today').strftime("%Y%m%d")
+df.to_csv(proj.dir + "data/patient_level_data_{}_deid.csv".format(d))
