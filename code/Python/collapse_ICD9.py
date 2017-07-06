@@ -16,8 +16,13 @@ dfhypg.columns = ['MRN_HUP', 'hyp_ICD9_count', 'hyp_ICD9_uniq_count']
 
 dfm = dfg.merge(dfhypg, on='MRN_HUP', how='left').fillna(0)
 
-d = pd.to_datetime('today').strftime("%Y%m%d")
-dfm.to_csv(proj_dir + "data/collapsed_ICD9_{}.csv".format(d))
+
+def get():
+    return dfm
+
+if __name__ == "__main__":
+    d = pd.to_datetime('today').strftime("%Y%m%d")
+    dfm.to_csv(proj_dir + "data/collapsed_ICD9_{}.csv".format(d))
 
 
 
