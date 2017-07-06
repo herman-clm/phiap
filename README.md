@@ -8,6 +8,14 @@ IRB #827260
 # Background
 Primary aldosteronism or PA is a hormonal disorder that leads to high blood pressure.  It occurs when the body produces too much of the hormone, aldosterone.  PA is highly treatable, however it is difficult to identify.  It exists in about 5% of high blood pressure cases.
 
+# Meeting 2017-06-22 Dan, Selah, Sunil
+## Things to show/discuss
+* compiling data on the patient level
+* look at regex results
+* note concatination
+* go over and close gitlab issues
+* next steps
+
 
 # Meeting 2017-06-01 Dan, Selah, Sunil
 ## Things to show/discuss
