@@ -3,25 +3,23 @@ import numpy as np
 
 proj_dir = '/home/selah/Projects/Daniel_Herman_Aldosterone_2017_03/'
 
-regexfile = proj_dir + "data/collapsed_regex_20170621_deid.csv"
-df_regex = pd.read_csv(regexfile)
 
-#TODO - discuss how to handle Nan's
-
-dfmed = pd.read_csv(proj_dir + "data/raw_data/2_meds.csv")
+dfmed = pd.read_csv(proj_dir + "data/raw_data/7_5_SENT_MEDS.csv")
+dfmedf = dfmed[['EMPI','ORDER_DATE', 'SIMPLE_GENERIC_NAME', 'GENERIC_NAME']]
 #TODO investigate why so few patients have medications
 #dfmed.MRN_HUP.nunique()
 
 dfhypmed = pd.read_excel(proj_dir + "data/raw_data/UNIQUE_HYPERTENSION_MEDICATIONS.xlsx")
 sgnlist = dfhypmed.SIMPLE_GENERIC_NAME.unique().tolist()
 
-dfmed['is_hyp_med'] = dfmed.SIMPLE_GENERIC_NAME.isin(sgnlist) & (dfmed.GENERIC_NAME.isnull()==False) & (dfmed.SIMPLE_GENERIC_NAME.isnull()==False)
-dfmedg = dfmed.groupby('MRN_HUP').agg({'is_hyp_med':['sum','count']})
-dfmedg.columns = ['hyp_meds_count', 'all_meds_count']
+#TODO - discuss how to handle Nan's, why did i remove NaN's from GENERIC_NAME also before
+dfmedf['is_hyp'] = dfmed.SIMPLE_GENERIC_NAME.isin(sgnlist) & (dfmed.SIMPLE_GENERIC_NAME.isnull()==False)
+dfmedg = dfmedf.groupby('EMPI').agg({'is_hyp':['sum','count']})
+dfmedg.columns = ['count_meds_hyp', 'count_meds_all']
       
-dfmedu = dfmed[['MRN_HUP','SIMPLE_GENERIC_NAME','is_hyp_med']].drop_duplicates()
-dfmedug = dfmedu.groupby('MRN_HUP').agg({'is_hyp_med':['sum','count']})
-dfmedug.columns = ['hyp_meds_uniq_count', 'all_meds_uniq_count']
+dfmedu = dfmedf[['EMPI','SIMPLE_GENERIC_NAME','is_hyp']].drop_duplicates()
+dfmedug = dfmedu.groupby('EMPI').agg({'is_hyp':['sum','count']})
+dfmedug.columns = ['count_meds_hyp_uniq', 'count_meds_uniq']
 
 dfmedcounts = dfmedg.merge(dfmedug, left_index=True, right_index=True, how="left").reset_index()
 
