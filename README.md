@@ -6,17 +6,8 @@ IRB #827260
     * [Teixera paper](http://doi.org/10.1093/jamia/ocw071)
     * Supplimentary info - http://bic.med.upenn.edu/cicTeam/Daniel_Herman_Aldosterone_2017_03/blob/master/ocw071_Supp.pdf
 
-## Future Project Thoughts
-* tools for creative ideas
-    * timeline plots, spaghetti plots
-    * notes timeline
-    * histograms?  clustering?
-* what else can we diagnose? PA? What else
-* what can we create that is new rather than validation
-* how can we take better advantage of longitudinal data
-* Predict aldosteronism in patients based on EHR data.
- * First: use existing aldostorone identifying guidelines, implement those using SQL and PennDataStore (or any other relevent PennMedicine data resources)
- * Eventually: build a model independent of guidelines to predict aldosteronism as well as possible
+## Future Project Ideas
+http://bic.med.upenn.edu/cicTeam/Daniel_Herman_Aldosterone_2017_03/blob/master/future_project.md
 
 
 # Background
