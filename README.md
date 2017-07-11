@@ -1,6 +1,12 @@
 IRB #827260
 
-# Future Project Thoughts
+
+# Goal
+* Reimplement algorithm specified in Teixera paper, evaluate how it works on PennMedicine data
+    * [Teixera paper](http://doi.org/10.1093/jamia/ocw071)
+    * https://oup.silverchair-cdn.com/oup/backfile/Content_public/Journal/jamia/24/1/10.1093_jamia_ocw071/3/ocw071_Supp.pdf
+
+## Future Project Thoughts
 * tools for creative ideas
     * timeline plots, spaghetti plots
     * notes timeline
@@ -8,11 +14,10 @@ IRB #827260
 * what else can we diagnose? PA? What else
 * what can we create that is new rather than validation
 * how can we take better advantage of longitudinal data
-
-# Goal
 * Predict aldosteronism in patients based on EHR data.
  * First: use existing aldostorone identifying guidelines, implement those using SQL and PennDataStore (or any other relevent PennMedicine data resources)
  * Eventually: build a model independent of guidelines to predict aldosteronism as well as possible
+
 
 # Background
 Primary aldosteronism or PA is a hormonal disorder that leads to high blood pressure.  It occurs when the body produces too much of the hormone, aldosterone.  PA is highly treatable, however it is difficult to identify.  It exists in about 5% of high blood pressure cases.
