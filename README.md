@@ -14,6 +14,8 @@ Primary aldosteronism or PA is a hormonal disorder that leads to high blood pres
     * EMPI
     * Historical meds
     * Patient level compilation, (waiting on new regex)
+* Preliminary modelling, 
+    * do we have outcome variables?
 * RedCap next steps
 * Knime, ConceptIndexer investigations
 
