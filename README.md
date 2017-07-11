@@ -4,7 +4,7 @@ IRB #827260
 # Goal
 * Reimplement algorithm specified in Teixera paper, evaluate how it works on PennMedicine data
     * [Teixera paper](http://doi.org/10.1093/jamia/ocw071)
-    * https://oup.silverchair-cdn.com/oup/backfile/Content_public/Journal/jamia/24/1/10.1093_jamia_ocw071/3/ocw071_Supp.pdf
+    * Supplimentary info - http://bic.med.upenn.edu/cicTeam/Daniel_Herman_Aldosterone_2017_03/blob/master/ocw071_Supp.pdf
 
 ## Future Project Thoughts
 * tools for creative ideas
