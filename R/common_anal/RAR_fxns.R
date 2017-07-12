@@ -44,11 +44,13 @@ load_RAR <- function() {
   
   list(others=others, res1=res1)
 }
+
+
 load_RAR_specific <- function() {
   #' Load in RAR.csv file that contains renin and aldosterone laboratory results
   #' @return data.frame
   
-  res1 <- fread("~/Downloads/RAR.csv", stringsAsFactors = F, h=T)
+  res1 <- fread("/data/raw_data/PA/select___from_RAR.csv", stringsAsFactors = F, h=T)
   res1$RESULT_ITEM_CODE <- gsub(" |,|\\/|\\#", "_", res1$RESULT_ITEM_CODE )  # replace extraneous characters
   res1$ORDER_NAME <- gsub(" ", "_", res1$ORDER_NAME )  # replace spaces
   
@@ -75,6 +77,8 @@ load_RAR_specific <- function() {
   
   res1
 }
+
+
 load_RAR_surround <- function() {
   #' Load in RAR_SURROUND.csv, which contains laboratory results
   #' @return data.frame
