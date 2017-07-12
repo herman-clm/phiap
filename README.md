@@ -1,12 +1,34 @@
 IRB #827260
 
-# Goal
-* Predict aldosteronism in patients based on EHR data.
- * First: use existing aldostorone identifying guidelines, implement those using SQL and PennDataStore (or any other relevent PennMedicine data resources)
- * Eventually: build a model independent of guidelines to predict aldosteronism as well as possible
 
-# Background
-Primary aldosteronism or PA is a hormonal disorder that leads to high blood pressure.  It occurs when the body produces too much of the hormone, aldosterone.  PA is highly treatable, however it is difficult to identify.  It exists in about 5% of high blood pressure cases.
+# Goal
+* Reimplement algorithm specified in Teixera paper, evaluate how it works on PennMedicine data
+    * [Teixera paper](http://doi.org/10.1093/jamia/ocw071)
+    * Supplimentary info - http://bic.med.upenn.edu/cicTeam/Daniel_Herman_Aldosterone_2017_03/blob/master/ocw071_Supp.pdf
+
+## Future Project Ideas
+http://bic.med.upenn.edu/cicTeam/Daniel_Herman_Aldosterone_2017_03/blob/master/future_project.md
+
+
+
+# Meeting 2017-07-11 Dan, Selah, Sunil
+## Things to show/discuss
+* Progess on issues
+    * EMPI
+    * Historical meds
+    * Patient level compilation, (waiting on new regex)
+* Preliminary modelling, 
+    * do we have outcome variables?
+* RedCap next steps
+* Knime, ConceptIndexer investigations
+
+# Meeting 2017-06-22 Dan, Selah, Sunil
+## Things to show/discuss
+* compiling data on the patient level
+* look at regex results
+* note concatination
+* go over and close gitlab issues
+* next steps
 
 
 # Meeting 2017-06-01 Dan, Selah, Sunil
@@ -99,6 +121,9 @@ http://www.med.upenn.edu/dac/penn-data-store-warehouse.html
   * Notes (for NLP)
   * Demographics
   * Schema: https://www.med.upenn.edu/dac/assets/user-content/images/ODS_Schema_4_1.jpg
+
+# Aldosteronism
+Primary aldosteronism or PA is a hormonal disorder that leads to high blood pressure.  It occurs when the body produces too much of the hormone, aldosterone.  PA is highly treatable, however it is difficult to identify.  It exists in about 5% of high blood pressure cases.
 
 # Initial goals
 * Collect medication information
