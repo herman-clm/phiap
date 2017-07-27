@@ -14,7 +14,6 @@ suppressMessages(library(dtplyr))
 suppressMessages(library(magrittr))
 suppressMessages(library(tidyr))
 suppressWarnings(library(ggplot2))
-suppressMessages(suppressWarnings(library(RODBC)))
 suppressMessages(suppressWarnings(library(knitr)))
 suppressMessages(suppressWarnings(library(logging)))
 suppressMessages(suppressWarnings(library(ROCR)))
@@ -30,7 +29,7 @@ a <- load_RAR()
 attach(a)
 ```
 
-```{r explore_tests, eval=FALSE}
+```{r explore_tests, eval=FALSE, dependson=c("get_tests")}
 table(res1$RESULT_ITEM_CODE, res1$ORDER_ITEM_CODE)
 ```
 ```{r something, eval=FALSE}

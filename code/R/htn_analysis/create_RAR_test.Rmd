@@ -21,7 +21,7 @@ source("../common_anal/R_fxns.R")
 ```{r fxns, echo=FALSE, cache=FALSE}
 load_RAR_specific <- function() {
   
-  res1 <- fread("~/Downloads/RAR.csv", stringsAsFactors = F, h=T)
+  res1 <- fread("/data/raw_data/PA/select___from_RAR.csv", stringsAsFactors = F, h=T)
   res1$RESULT_ITEM_CODE <- gsub(" |,|\\/|\\#", "_", res1$RESULT_ITEM_CODE )
   res1$ORDER_NAME <- gsub(" ", "_", res1$ORDER_NAME )
   res1$ORDER_START_DATE <- as.POSIXct(res1$ORDER_START_DATE, format = "%d-%b-%Y %H:%M:%S")
@@ -45,7 +45,7 @@ load_RAR_specific <- function() {
   res1
 }
 load_RAR_surround <- function() {
-  res <- read.csv("~/Downloads/RAR_SURROUND.csv", as.is = T, h=T, nrows = Inf)
+  res <- read.csv("/data/raw_data/PA/select___from_RAR_surround.csv", as.is = T, h=T, nrows = Inf)
   
   res$RESULT_ITEM_CODE <- gsub(" |,|\\/|\\#", "_", res$RESULT_ITEM_CODE )
   res$ORDER_NAME <- gsub(" ", "_", res$ORDER_NAME )
@@ -131,6 +131,7 @@ a <- load_RAR_specific() %>%
 
 b <- load_RAR_surround() %>%
   select(-PATIENT_IDENTIFIER, -ORDER_NAME, -VISIT_NUMBER, -PK_ENCOUNTER_ID, -ORDER_ITEM_CODE, -ORDER_ITEM_DESCRIPTION, -RESULT_DATE, -PERFORMED_DATE, -DATE_DIFF)
+
 
 ids <- idpatients(list(a,b))
 a <- deidentify(dat=a, id_cols="EMPI", dt_cols=c("ORDER_START_DATE", "BIRTH_DATE"), 

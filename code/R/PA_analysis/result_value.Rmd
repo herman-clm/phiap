@@ -1,0 +1,735 @@
+---
+title: "Result Value in Res1 & Surround"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE, echo=FALSE, cache=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(data.table)
+library(tibble)
+source("/home/dingxi/repos/Daniel_Herman_Aldosterone_2017_03/code/R/common_anal/R_fxns.R")
+```
+Load in RAR.csv file that contains renin and aldosterone laboratory results. But for RESULT_VALUE, there are many rows that has non-numeric values.
+
+## HERMANDA_RARV2.csv
+```{r, echo=FALSE}
+
+# Load in RAR.csv file that contains renin and aldosterone laboratory results
+
+res1 <- fread("/data/raw_data/PA/HERMANDA_RARV2.csv", stringsAsFactors = FALSE, header = TRUE)
+
+#-- X.D.: for now, do not clean the special characters in RESULT_ITEM_CODE and ORDER_NAME
+# res1$RESULT_ITEM_CODE <- gsub(" |,|\\/|\\#", 
+#                               "_", res1$RESULT_ITEM_CODE )  # replace extraneous characters
+
+# res1$ORDER_NAME <- gsub(" ", "_", res1$ORDER_NAME )  # replace spaces
+
+# test
+# number of unique RESULT_ITEM_CODES before and after transition
+
+# Handle dates
+# res1$ORDER_START_DATE <- as.POSIXct(res1$ORDER_START_DATE, format = "%d-%b-%Y %H:%M:%S")
+# res1$BIRTH_DATE <- as.POSIXct(res1$BIRTH_DATE, format = "%d-%b-%Y %H:%M:%S")
+# res1$RESULT_DATE <- as.POSIXct(res1$RESULT_DATE, format = "%d-%b-%Y %H:%M:%S")
+# res1$PERFORMED_DATE <- as.POSIXct(res1$PERFORMED_DATE, format = "%d-%b-%Y %H:%M:%S")
+### X.D.: Seems the format does not match the data from select___from_RARv2.csv
+res1$ORDER_START_DATE <- as.POSIXct(res1$ORDER_START_DATE, format = '%Y-%m-%d %H:%M:%S')
+res1$BIRTH_DATE <- as.POSIXct(res1$BIRTH_DATE, format = '%Y-%m-%d %H:%M:%S')
+res1$RESULT_DATE <- as.POSIXct(res1$RESULT_DATE, format = '%Y-%m-%d %H:%M:%S')
+res1$PERFORMED_DATE <- as.POSIXct(res1$PERFORMED_DATE, format = '%Y-%m-%d %H:%M:%S')
+
+
+
+res1$GENDER_MASTER_CODE <- as.factor(res1$GENDER_MASTER_CODE)
+res1$EMPI <- as.character(res1$EMPI)
+
+
+# Create provider field that defaults to ORDERING_PROV, and if empty ADMITTING_PROV
+
+res1$prov <- res1$ORDERING_PROV
+res1$prov[which(res1$prov=="")] <- res1$ADMITTING_PROV[which(res1$prov=="")]  
+
+
+res1$Age <- floor(as.numeric(res1$ORDER_START_DATE - res1$BIRTH_DATE)/365.25)  # Calc Age
+
+```
+Check the inputs which includes/starts with "<" or ">", those are interpretable:
+```{r}
+sum(grepl("[<|>]",res1$RESULT_VALUE))
+sum(grepl("^[<|>]",res1$RESULT_VALUE))
+
+
+```
+Except for those, we also have:
+```{r}
+temp <- grepl("[A-Z|a-z|,]", res1$RESULT_VALUE)
+table(res1[temp, RESULT_VALUE])
+```
+### "See note"/"See Note"/"SEE NOTE":
+
+```{r}
+res1_sn <- res1[RESULT_VALUE %in% c("See note","See Note","SEE NOTE")]
+dim(res1_sn)[1]
+table(res1_sn$RESULT_ITEM_CODE)
+table(res1[RESULT_ITEM_CODE %in% unique(res1_sn$RESULT_ITEM_CODE),RESULT_ITEM_CODE])
+```
+```{r}
+table(res1_sn$RESULT_ITEM_DESCRIPTION)
+sum(res1_sn$RESULT_TEXT == "")
+```
+
+
+### Order Item Code, ORDER_ITEM_DESCRIPTION, ORDER_NAME
+A quick look at Order Item Code ~ Order Item Description
+```{r}
+
+res1 %>% group_by(ORDER_ITEM_CODE, ORDER_ITEM_DESCRIPTION) %>%
+  summarise(N = n()) %>%
+  arrange(ORDER_ITEM_CODE) %>%
+  print.data.frame()
+
+```
+The results show that each `ORDER_ITEM_CODE` has only one `ORDER_ITEM_DESCRIPTION`, which is consistant...   
+When adding `ORDER_NAME`:
+```{r}
+
+res1 %>% group_by(ORDER_NAME, ORDER_ITEM_CODE, ORDER_ITEM_DESCRIPTION) %>%
+  summarise(N = n()) %>%
+  ungroup() %>%
+  arrange(ORDER_ITEM_CODE) %>%
+  print.data.frame()
+
+```
+Some different `ORDER_NAME` could actually be the same test. Also, Same `ORDER_NAME` could result in different tests:
+```{r}
+res1  %>% group_by(ORDER_NAME, ORDER_ITEM_CODE, ORDER_ITEM_DESCRIPTION) %>%
+  summarise(N = n()) %>%
+  ungroup() %>%
+  arrange(ORDER_NAME) %>%
+  filter(ORDER_NAME == 'PLASMA RENIN ACTIVITY') %>%
+  print.data.frame()
+```
+So `ORDER_NAME` is not unique to tests.   
+
+
+
+### Check on `ORDER_ITEM_CODE` ~ `RESULT_ITEM_CODE`
+A first check on `ORDER_ITEM_CODE` ~ `RESULT_ITEM_CODE`:
+```{r}
+res1 %>% group_by(ORDER_ITEM_CODE, ORDER_ITEM_DESCRIPTION,RESULT_ITEM_CODE) %>%
+  summarise(N = n()) %>%
+  arrange(ORDER_ITEM_CODE) %>%
+  print.data.frame()
+```
+The same `ORDER_ITEM_CODE` will result in many different `RESULT_ITEM_CODE`, and not all of them are useful now.
+
+
+```{r}
+tmp <- res1 %>%
+  mutate(Year = year(RESULT_DATE)) %>%
+  group_by(Year, ORDER_ITEM_DESCRIPTION, ORDER_ITEM_CODE, RESULT_ITEM_CODE) %>%
+  summarize(count=n()) %>% ungroup() %>%
+  arrange(ORDER_ITEM_CODE, RESULT_ITEM_CODE, Year)
+
+```
+   
+   
+### `ORDER_ITEM_CODE` Exclusion
+An overall view about `ORDER_ITEM_CODE`
+```{r}
+res1 %>% group_by(ORDER_ITEM_CODE, ORDER_ITEM_DESCRIPTION, RESULT_ITEM_CODE) %>%
+  summarise(N = n()) %>%
+  ungroup() %>%
+  arrange(ORDER_ITEM_CODE) %>%
+  print.data.frame()
+```
+`ORDER_ITEM_CODE == '83497A'` : "ALDOSTERONE, URINE" -- excluded
+```{r}
+res1 %<>% filter(ORDER_ITEM_CODE != "83497A")
+```
+
+For the following `ORDER_ITEM_CODE`:
+C9009990   
+C9009995   
+C9009997   
+L500467   
+Q16845   
+Q19573   
+Should all of them be removed for now???
+```{r}
+res1 %>% filter(ORDER_ITEM_CODE %in% c("C9009990","C9009995","C9009997","L500467","Q16845","Q19573")) %>%
+  group_by(ORDER_ITEM_CODE, ORDER_ITEM_DESCRIPTION, RESULT_ITEM_CODE) %>%
+  summarise(N = n()) %>%
+  ungroup() %>%
+  arrange(ORDER_ITEM_CODE) %>%
+  print.data.frame()
+```
+
+
+
+
+##### (1) `ORDER_ITEM_CODE == 'C9010071'`
+```{r}
+res1 %>% filter(ORDER_ITEM_CODE == 'C9010071') %>%
+  group_by(ORDER_NAME, ORDER_GROUP, ORDER_ITEM_CODE, ORDER_ITEM_DESCRIPTION, RESULT_RESOURCE, RESULT_ITEM_CODE) %>%
+  summarise(N = n()) %>%
+  arrange(ORDER_GROUP) %>%
+  print.data.frame()
+```
+
+
+For Chart Review on `Historical Order` (only with `ORDER_ITEM_CODE == "C9010071"` now):
+```{r}
+res1 %>% filter(ORDER_GROUP == "Historical Order" & ORDER_ITEM_CODE == "C9010071") %>%
+  print.data.frame()
+ 
+```
+The `RESULT_RESOURCE` `UNIT_OF_MEASURE` are all blank. There are several RESULT_ITEM_CODE's here: PLASMA RENIN ACTIVITY (14), ALDOSTERONE, LC/MS/MS (2), RENIN (7), and others we don't care for now.
+
+Take a look at those `RESULT_ITEM_CODE == "PLASMA RENIN ACTIVITY"`. All of them have missing `RESULT_TEXT`, `UNIT_OF_MEASURE`, `RESULT_RESOURCE`. Their `ADMITTING_PROV` are all **DEGOMA, EMIL**.
+
+Chart Review on `ORDER_GROUP == "Historical Order"`. Details in chart_review_result_value.txt (1)
+
+
+
+Many of their test results were requested wrongly (phisician used a wrong `ORDER_ITEM_CODE`, here they are using ARUP lab code). And there are 72 `ORDER_ITEM_CODE = Historical Order`. So we could remove them for a better data quality. Also, in this `ORDER_ITEM_CODE`, all the "VITAMIN D, 25-HYDROXY"/"MICROALBUMIN 24 HOURS" and other results we don't need now are removed.
+
+
+
+```{r}
+res1 <- res1 %>% filter(!(ORDER_ITEM_CODE == "C9010071" & ORDER_GROUP == "Historical Order"))
+```
+
+
+
+
+Are some of the ARUP orders QUEST results?
+```{r}
+res1 %>% filter(ORDER_ITEM_CODE == 'C9010071') %>%
+  group_by(ORDER_NAME, ORDER_GROUP, ORDER_ITEM_CODE, ORDER_ITEM_DESCRIPTION, RESULT_RESOURCE, RESULT_ITEM_CODE) %>%
+  summarise(N = n()) %>%
+  arrange(RESULT_ITEM_CODE, N) %>%
+  print.data.frame()
+```
+
+Take a look on those with `RESULT_RESOURCE == "QUEST"`:
+```{r}
+res1 %>% filter(ORDER_ITEM_CODE == 'C9010071' & RESULT_RESOURCE== "QUEST") %>%
+  group_by(ORDER_NAME, ORDER_GROUP, ORDER_ITEM_CODE, ORDER_ITEM_DESCRIPTION, RESULT_RESOURCE, RESULT_ITEM_CODE) %>%
+  summarise(N = n()) %>%
+  arrange(RESULT_ITEM_CODE, N) %>%
+  print.data.frame()
+```
+Only one shows a different `RESULT_ITEM_CODE`, "RENIN", and it turned out to be from Labcorp, after chart viewing this patient. chart_review_result_value.txt (2). Except from the difference in `RESULT_ITEM_CODE`, the `UNIT_OF_MEASURE` for this record (ng/mL/hr) is also different from the ones from QUEST (ng/mL/h). (Have a check on `UNIT_OF_MEASURE` from Labcorp in next sub-section)
+
+Also, there is one record, `ORDER_GROUP = 'Penn Lab'`. chart_review_result_value.txt (2): He's from Quest.
+
+Have a check on `RESULT_RESOURCE == "QUEST"` & `RESULT_ITEM_CODE == 'PLASMA RENIN ACTIVITY, LC/MS/MS'` in chart review. chart_review_result_value.txt (2): All Quest
+
+
+After chart reviewing for this group: `ORDER_ITEM_CODE == 'C9010071' & RESULT_RESOURCE== "QUEST"`, we can be sure that for those patients with `RESULT_ITEM_CODE == "PLASMA RENIN ACTIVITY, LC/MS/MS"`, they all come from Quest tests. So we could identify them as "Lab = Quest, Test = PLASMA RENIN ACTIVITY, LC/MS/MS".
+
+
+What are the non-numeric RESULT_VALUES
+```{r}
+tmp <- res1 %>% 
+  mutate(num_result = numericize(RESULT_VALUE),
+         nnum_result = if_else(is.na(num_result), RESULT_VALUE, NULL)) %>%
+  group_by(nnum_result, ORDER_ITEM_CODE, RESULT_ITEM_CODE) %>%
+  summarize(count=n()) %>%
+  arrange(desc(count)) %>%
+  filter(!is.na(nnum_result))
+
+tmp
+```
+
+
+Note that many "TNP"s are observed.
+```{r}
+res1 %>% filter(RESULT_VALUE == "TNP") %>% 
+  arrange(RESULT_ITEM_CODE) %>%
+  print.data.frame()
+
+res1 %>% filter(RESULT_VALUE == "TNP") %>% 
+  group_by(ORDER_ITEM_CODE, RESULT_ITEM_CODE, RESULT_RESOURCE, ORDER_GROUP, RESULT_VALUE, RESULT_TEXT) %>%
+  summarize(count=n()) %>%
+  print.data.frame()
+
+# How do I find this group?
+res1 %>% filter(RESULT_VALUE == "TNP" & ORDER_ITEM_CODE == "C9010071") %>%
+  print.data.frame()
+
+
+```
+Check TNP's.
+chart_review_result_value.txt (3): All of them are from Quest.
+
+
+
+
+#### A part to Figure out Units...
+```{r}
+res1 %>% filter(ORDER_ITEM_CODE == "L000703") %>%
+  group_by(RESULT_ITEM_CODE, UNIT_OF_MEASURE) %>%
+  summarise(N = n())
+```
+```{r}
+res1 %>% filter(ORDER_ITEM_CODE == "L500458") %>%
+  group_by(RESULT_ITEM_CODE, UNIT_OF_MEASURE) %>%
+  summarise(N = n())
+```
+
+```{r}
+res1 %>% filter(ORDER_ITEM_CODE == "Q10537") %>%
+  group_by(RESULT_ITEM_CODE, UNIT_OF_MEASURE) %>%
+  summarise(N = n())
+```
+Have a check on those 3 patients. 
+
+```{r}
+res1 %>% filter(ORDER_ITEM_CODE == "Q11183") %>%
+  group_by(RESULT_ITEM_CODE, UNIT_OF_MEASURE) %>%
+  summarise(N = n())
+```
+
+```{r}
+res1 %>% filter(UNIT_OF_MEASURE == "ng/mL/hr") %>%
+  group_by(RESULT_ITEM_CODE) %>%
+  summarise(N = n())
+```
+
+```{r}
+res1 %>%
+  filter(ORDER_ITEM_CODE == "C9010071") %>%
+  group_by(ORDER_ITEM_CODE, RESULT_ITEM_CODE, RESULT_RESOURCE, UNIT_OF_MEASURE) %>%
+  summarize(count=n()) %>%
+  arrange(desc(count))
+  
+```
+
+
+
+By looking at the cleaned results, there is still some inconsistancy, such as `ORDER_GROUP = Penn Lab` but `RESULT_RESOURCE = QUEST`, or `ORDER_GROUP = Normal` but `RESULT_RESOURCE = QUEST`, and there are many records here that are from QUEST, but labeled as ARUP.
+
+See what's left here:
+```{r}
+res1 %>% filter(ORDER_ITEM_CODE == 'C9010071' & ORDER_GROUP != "Historical Order") %>%
+  filter(!(RESULT_RESOURCE == "QUEST")) %>%
+  group_by(ORDER_NAME, ORDER_ITEM_CODE, ORDER_ITEM_DESCRIPTION, RESULT_RESOURCE, RESULT_ITEM_CODE) %>%
+  summarise(N = n()) %>%
+  arrange(RESULT_ITEM_CODE) %>%
+  print.data.frame()
+```
+
+
+--- `RESULT_ITEM_CODE == "RENIN"`
+```{r}
+res1 %>% filter(ORDER_ITEM_CODE == 'C9010071' & RESULT_ITEM_CODE == "RENIN") %>%
+  filter(!(RESULT_RESOURCE == "QUEST")) %>%
+  group_by(ORDER_NAME, ORDER_ITEM_CODE, ORDER_ITEM_DESCRIPTION, RESULT_RESOURCE, RESULT_ITEM_CODE) %>%
+  summarise(N = n()) %>%
+  arrange(RESULT_ITEM_CODE) %>%
+  print.data.frame()
+```
+
+----------- Check those with `RESULT_RESOURCE == "LABCORP"` (281) 
+```{r}
+res1 %>% filter(ORDER_ITEM_CODE == 'C9010071' & RESULT_ITEM_CODE == "RENIN" & RESULT_RESOURCE == "LABCORP") %>%
+  group_by(ORDER_NAME, ORDER_ITEM_DESCRIPTION, UNIT_OF_MEASURE,ORDER_GROUP) %>%
+  summarise(N=n()) %>%
+  print.data.frame()
+```
+3 `ORDER_GROUP`. Chart Review on all of the 3 groups. chart_review_result_value.txt (4). Conclusion: All from All from Labcorp (Renin Activity, Plasma).
+
+----------- Check those with `RESULT_RESOURCE == "LANCASTER GENERAL"` (13) 
+```{r}
+res1 %>% filter(ORDER_ITEM_CODE == 'C9010071' & RESULT_ITEM_CODE == "RENIN" & RESULT_RESOURCE == "LANCASTER GENERAL") %>%
+  group_by(ORDER_NAME, ORDER_ITEM_DESCRIPTION, UNIT_OF_MEASURE,RESULT_RESOURCE, RESULT_ITEM_CODE) %>%
+  summarise(N = n()) %>%
+  arrange(RESULT_ITEM_CODE) %>%
+  print.data.frame()
+```
+Chart review. chart_review_result_value.txt (5).
+==> Conclusion: All from QUEST (RENIN ACTIVITY).
+
+
+----------- Check those with `RESULT_RESOURCE != "LABCORP"/"LANCASTER GENERAL"` (5787) 
+`ORDER_GROUP` here makes no differences (no "Outside Lab Collect"). The Units shows a little difference. Doing chart review on different UNIT_OF_MEASURE & RESULT_RESOURCE groups.
+```{r}
+res1 %>% filter(ORDER_ITEM_CODE == 'C9010071' & RESULT_ITEM_CODE == "RENIN" & RESULT_RESOURCE != "LABCORP"  & RESULT_RESOURCE != "LANCASTER GENERAL") %>%
+  filter(!(RESULT_RESOURCE == "QUEST")) %>%
+  group_by(ORDER_NAME, ORDER_ITEM_DESCRIPTION, UNIT_OF_MEASURE,RESULT_RESOURCE, RESULT_ITEM_CODE) %>%
+  summarise(N = n()) %>%
+  arrange(RESULT_ITEM_CODE) %>%
+  print.data.frame()
+```
+Chart Review on all of the 14 groups, but do the reviewing based on UNIT_OF_MEASURE. chart_review_result_value.txt (6).
+
+In this group, they all have the same LOINC_CODE (2915-7)
+```{r}
+dim(res1 %>% filter(ORDER_ITEM_CODE == 'C9010071' & RESULT_ITEM_CODE == "RENIN"   & RESULT_RESOURCE != "LABCORP" & RESULT_RESOURCE != "LANCASTER GENERAL") %>%
+      filter(!(RESULT_RESOURCE == "QUEST")) %>% filter(LOINC_CODE == "2915-7"))
+```
+==> Conclusion: UNIT_OF_MEASURE in ("NGMLHR", "ngmLhr", "ng/mL/hr")
+                  - Lab: ARUP
+                  - Test: Renin Activity
+                  - Method: Renin Activity in Plasma (from LOINC 2915-7)
+                UNIT_OF_MEASURE others:
+                  search "arup" in RESULT_TEXT:
+                    - Yes: Labeled same as above
+                    - No: Lab:unknown
+                          Test: Renin Activity
+                          Method: Renin Activity in Plasma (from LOINC 2915-7)
+
+
+
+See what's left here:
+```{r}
+res1 %>% filter(ORDER_ITEM_CODE == 'C9010071' & ORDER_GROUP != "Historical Order" & RESULT_ITEM_CODE != "RENIN") %>%
+  filter(!(RESULT_RESOURCE == "QUEST")) %>%
+  group_by(ORDER_NAME, ORDER_ITEM_CODE, ORDER_ITEM_DESCRIPTION, RESULT_RESOURCE, RESULT_ITEM_CODE) %>%
+  summarise(N = n()) %>%
+  arrange(RESULT_ITEM_CODE) %>%
+  print.data.frame()
+```
+
+--- `RESULT_ITEM_CODE == "RENIN ACTIVITY"`
+```{r}
+res1 %>% filter(ORDER_ITEM_CODE == 'C9010071' & ORDER_GROUP != "Historical Order" & RESULT_ITEM_CODE == "RENIN ACTIVITY") %>%
+  filter(!(RESULT_RESOURCE == "QUEST")) %>%
+  group_by(ORDER_NAME, ORDER_ITEM_CODE, ORDER_ITEM_DESCRIPTION, RESULT_RESOURCE, RESULT_ITEM_CODE, UNIT_OF_MEASURE, ORDER_GROUP) %>%
+  summarise(N = n()) %>%
+  arrange(RESULT_ITEM_CODE) %>%
+  print.data.frame()
+```
+
+They all come from "CCH SUNQUEST", but 3 different `ORDER_GROUP`s, with the same `UNIT_OF_MEASURE` (ng/mL/hr). `RESULT_VALUE` & `RESULT_TEXT` are all missing. 
+
+Even they don't have a RESULT_VALUE there, it is worthwhile to check where they come from for "CCH SUNQUEST". chart_review_result_value.txt (7).
+
+==> Conclusion: - Lab: ARUP
+                - Test: Renin Activity
+                - Method: Renin Activity in Plasma (from LOINC 2915-7)
+
+
+--- `RESULT_ITEM_CODE == "PLASMA RENIN ACTIVITY"`
+```{r}
+res1 %>% filter(ORDER_ITEM_CODE == 'C9010071' & ORDER_GROUP != "Historical Order" & RESULT_ITEM_CODE == "PLASMA RENIN ACTIVITY") %>%
+  filter(!(RESULT_RESOURCE == "QUEST")) %>%
+  group_by(ORDER_NAME, ORDER_ITEM_CODE, ORDER_ITEM_DESCRIPTION, RESULT_RESOURCE, RESULT_ITEM_CODE, UNIT_OF_MEASURE, ORDER_GROUP) %>%
+  summarise(N = n()) %>%
+  arrange(RESULT_ITEM_CODE) %>%
+  print.data.frame()
+```
+chart_review_result_value.txt (8).
+
+==> Conclusion: All Quest
+                Lab: Quest
+                Test: Renin Activity
+                Method: Plasma Renin Activity
+                
+
+--- `RESULT_ITEM_CODE == "ALDOSTERONE, LC/MS/MS"`(1)
+His/Her encounter info is messy.
+
+==> Conclusion: Exclude
+
+
+
+
+
+There are differences in `UNIT_OF_MEASURE`:
+```{r}
+res1 %>% filter(ORDER_ITEM_CODE == 'C9010071' & RESULT_ITEM_CODE == "RENIN" & RESULT_RESOURCE == '') %>%
+         filter(!(RESULT_RESOURCE == "QUEST")) %>%
+         group_by(UNIT_OF_MEASURE, year(ORDER_START_DATE)) %>%
+  summarise(N=n())
+```
+
+##### (2) `ORDER_ITEM_CODE == 'C9010005'`
+Check the `RESULT_ITEM_CODE` and `RESULT_RESOURCE`
+
+```{r}
+res1 %>% filter(ORDER_ITEM_CODE == 'C9010005') %>%
+  group_by(ORDER_ITEM_CODE, ORDER_GROUP,ORDER_ITEM_DESCRIPTION, RESULT_ITEM_CODE, RESULT_RESOURCE) %>%
+  summarise(N = n()) %>%
+  ungroup() %>%
+  arrange(RESULT_ITEM_CODE) %>%
+  print.data.frame()
+```
+
+
+-- `ORDER_GROUP = "Historical Order" & RESULT_ITEM_CODE = "ALDOSTERONE"`(5):
+
+```{r}
+res1 %>% filter(ORDER_ITEM_CODE == 'C9010005' & ORDER_GROUP == "Historical Order" & RESULT_ITEM_CODE == "ALDOSTERONE") %>%
+  group_by(ORDER_ITEM_CODE, ORDER_GROUP,ORDER_ITEM_DESCRIPTION, RESULT_ITEM_CODE, RESULT_RESOURCE) %>%
+  summarise(N = n()) %>%
+  ungroup() %>%
+  arrange(RESULT_ITEM_CODE) %>%
+  print.data.frame()
+```
+
+chart_review_result_value.txt (9).
+==> Conclusion: Lab: unknown
+                Test: Aldosterone
+                Method: LOINC: 1763-2
+
+For other "Historical Order", exclude them.
+
+See what's left:
+```{r}
+res1 %>% filter(ORDER_ITEM_CODE == 'C9010005' & ORDER_GROUP != "Historical Order") %>%
+  group_by(ORDER_ITEM_CODE,ORDER_ITEM_DESCRIPTION, RESULT_ITEM_CODE, RESULT_RESOURCE) %>%
+  summarise(N = n()) %>%
+  ungroup() %>%
+  arrange(RESULT_ITEM_CODE) %>%
+  print.data.frame()
+```
+
+-- `ORDER_GROUP != "Historical Order" & RESULT_ITEM_CODE = "ALDOSTERONE, LC/MS/MS"`
+
+```{r}
+res1 %>% filter(ORDER_ITEM_CODE == 'C9010005' & ORDER_GROUP != "Historical Order" & RESULT_ITEM_CODE == "ALDOSTERONE, LC/MS/MS") %>%
+  group_by(ORDER_ITEM_CODE, ORDER_GROUP,ORDER_ITEM_DESCRIPTION, RESULT_ITEM_CODE, RESULT_RESOURCE, UNIT_OF_MEASURE,LOINC_CODE) %>%
+  summarise(N = n()) %>%
+  ungroup() %>%
+  arrange(RESULT_ITEM_CODE) %>%
+  print.data.frame()
+```
+There are roughly 11 groups. TheirDo chart review.
+
+chart_review_result_value.txt (10).
+
+==> Conclusion: Lab: Quest
+                Test: Aldosterone
+                Method: ALDOSTERONE, LC/MS/MS
+
+
+-- `ORDER_GROUP != "Historical Order" & RESULT_ITEM_CODE = "ALDOSTERONE"`
+```{r}
+res1 %>% filter(ORDER_ITEM_CODE == 'C9010005' & ORDER_GROUP != "Historical Order" & RESULT_ITEM_CODE == "ALDOSTERONE") %>%
+  group_by(ORDER_ITEM_CODE, ORDER_GROUP,ORDER_ITEM_DESCRIPTION, RESULT_ITEM_CODE, RESULT_RESOURCE, UNIT_OF_MEASURE,LOINC_CODE) %>%
+  summarise(N = n()) %>%
+  ungroup() %>%
+  arrange(RESULT_ITEM_CODE) %>%
+  print.data.frame()
+```
+
+--------- RESULT_RESOURCE = "LABCORP"
+```{r}
+res1 %>% filter(ORDER_ITEM_CODE == 'C9010005' & ORDER_GROUP != "Historical Order" & RESULT_ITEM_CODE == "ALDOSTERONE" & RESULT_RESOURCE == "LABCORP") %>%
+  group_by(ORDER_ITEM_CODE, ORDER_GROUP,ORDER_ITEM_DESCRIPTION, RESULT_ITEM_CODE, RESULT_RESOURCE, UNIT_OF_MEASURE,LOINC_CODE) %>%
+  summarise(N = n()) %>%
+  ungroup() %>%
+  arrange(RESULT_ITEM_CODE) %>%
+  print.data.frame()
+```
+
+chart_review_result_value.txt (11).
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Explore  result_text
+```{r}
+res1 %>%
+  filter(ORDER_ITEM_CODE == 'C9010005') %>%
+  mutate(Lab = if_else(RESULT_RESOURCE == "QUEST", "QUEST", 
+                       if_else(RESULT_RESOURCE == "LABCORP", "LABCORP",
+                               "ARUP"))) %>%
+  group_by(RESULT_ITEM_CODE, Lab, RESULT_TEXT) %>%
+  summarize(count=n()) %>% select(count, RESULT_TEXT) %>%
+  mutate(RESULT_TEXT = substr(RESULT_TEXT, 1, 50)) %>%
+  arrange(desc(count)) %>% print.data.frame
+
+res1 %>%
+  filter(ORDER_ITEM_CODE == 'C9010005' & RESULT_TEXT == "") %>%
+  group_by(RESULT_ITEM_CODE, RESULT_RESOURCE) %>%
+  summarize(count=n()) %>% select(count, RESULT_RESOURCE) %>%
+  arrange(desc(count)) %>% print.data.frame
+```
+
+
+##### (3) `ORDER_ITEM_CODE == 'L000703'`
+Check the `RESULT_ITEM_CODE` and `RESULT_RESOURCE`
+
+```{r}
+res1 %>% filter(ORDER_ITEM_CODE == 'L000703') %>%
+  group_by(ORDER_ITEM_CODE, ORDER_ITEM_DESCRIPTION, RESULT_ITEM_CODE, RESULT_RESOURCE) %>%
+  summarise(N = n()) %>%
+  ungroup() %>%
+  arrange(RESULT_ITEM_CODE) %>%
+  print.data.frame()
+```
+The results here seem to be paired? - Yes, they are perfectly paired!
+
+Explore Labcorp result_text
+```{r}
+res1 %>%
+  filter(ORDER_ITEM_CODE == 'L000703') %>%
+  group_by(RESULT_TEXT) %>%
+  summarize(count=n())
+```
+
+
+```{r}
+res1 %>% filter(ORDER_ITEM_CODE == 'L000703') %>%
+  group_by(ORDER_ITEM_CODE, ORDER_ITEM_DESCRIPTION, RESULT_ITEM_CODE, RESULT_RESOURCE) %>%
+  ungroup() %>%
+  arrange(EMPI, ORDER_START_DATE) %>%
+  select(EMPI, ORDER_DATE, ORDER_START_DATE, ORDER_GROUP, VISIT_NUMBER, RESULT_RESOURCE, RESULT_ITEM_CODE, PERFORMED_DATE) %>%
+  print.data.frame()
+```
+
+##### (4) `ORDER_ITEM_CODE == 'L500458'`
+Check the `RESULT_ITEM_CODE` and `RESULT_RESOURCE`. Only one order and result here, including 13 records.
+
+```{r}
+res1 %>% filter(ORDER_ITEM_CODE == 'L500458') %>%
+  group_by(ORDER_ITEM_CODE, ORDER_ITEM_DESCRIPTION, RESULT_ITEM_CODE, RESULT_RESOURCE) %>%
+  summarise(N = n()) %>%
+  ungroup() %>%
+  arrange(RESULT_ITEM_CODE) %>%
+  print.data.frame()
+```
+
+
+##### (5) `ORDER_ITEM_CODE == 'Q10537'`
+Check the `RESULT_ITEM_CODE` and `RESULT_RESOURCE`. Only one ORDER/RESULT here, 3 records.
+
+```{r}
+res1 %>% filter(ORDER_ITEM_CODE == 'Q10537') %>%
+  group_by(ORDER_ITEM_CODE, ORDER_ITEM_DESCRIPTION, RESULT_ITEM_CODE, RESULT_RESOURCE) %>%
+  summarise(N = n()) %>%
+  ungroup() %>%
+  arrange(RESULT_ITEM_CODE) %>%
+  print.data.frame()
+
+```
+
+
+
+##### (6) `ORDER_ITEM_CODE == 'Q11183'`
+Check the `RESULT_ITEM_CODE` and `RESULT_RESOURCE`. Only one ORDER/RESULT here, 3 records.
+
+```{r}
+res1 %>% filter(ORDER_ITEM_CODE == 'Q11183') %>%
+  group_by(ORDER_ITEM_CODE, ORDER_ITEM_DESCRIPTION, RESULT_ITEM_CODE, RESULT_RESOURCE) %>%
+  summarise(N = n()) %>%
+  ungroup() %>%
+  arrange(RESULT_ITEM_CODE) %>%
+  print.data.frame()
+
+res1 %>% filter(ORDER_ITEM_CODE == 'Q11183') %>%
+  select(RESULT_DATE)
+```
+Again the results seem paired....   
+```{r}
+res1 %>% filter(ORDER_ITEM_CODE == 'Q11183') %>%
+  group_by(ORDER_ITEM_CODE, ORDER_ITEM_DESCRIPTION, RESULT_ITEM_CODE, RESULT_RESOURCE) %>%
+  ungroup() %>%
+  arrange(EMPI, ORDER_START_DATE) %>%
+  select(EMPI, ORDER_DATE, ORDER_START_DATE, ORDER_GROUP, VISIT_NUMBER,PK_ENCOUNTER_ID, RESULT_RESOURCE, RESULT_ITEM_CODE, PERFORMED_DATE) %>%
+  print.data.frame()
+```
+The `RESULT_ITEM_CODE` shows 3 different tests: 
+* PLASMA RENIN ACTIVITY
+* Q ALDOSTERONE/PRA RATIO
+* ALDOSTERONE, LC/MS/MS
+All of the 3 test come together, except for `EMPI="1001267813"` with `ORDER_DATE = 2009-06-15 00:00:00`. Also, for most of the cases, **ALDOSTERONE, LC/MS/MS** appears in different `VISIT_NUMBER/PK_ENCOUNTER_ID` from **PLASMA RENIN ACTIVITY/Q ALDOSTERONE/PRA RATIO**(these two always come in a bundle...), but the three will have exactly the same `ORDER_DATE/ORDER_START_DATE`.   
+As explained, **Q ALDOSTERONE/PRA RATIO** is not useful for now, so we could remove them for now. 6 records were removed here:
+
+```{r}
+res1 <- res1 %>% filter(!(ORDER_ITEM_CODE == 'Q11183' & RESULT_ITEM_CODE == "Q ALDOSTERONE/PRA RATIO"))
+```
+
+
+
+##### (7) `ORDER_ITEM_CODE == 'Q16846'`
+Check the `RESULT_ITEM_CODE` and `RESULT_RESOURCE`. 
+
+```{r}
+res1 %>% filter(ORDER_ITEM_CODE == 'Q16846') %>%
+  group_by(ORDER_ITEM_CODE, ORDER_ITEM_DESCRIPTION, RESULT_ITEM_CODE, RESULT_RESOURCE) %>%
+  summarise(N = n()) %>%
+  ungroup() %>%
+  arrange(RESULT_ITEM_CODE) %>%
+  print.data.frame()
+
+res1 %>%
+  filter(ORDER_ITEM_CODE == 'Q16846') %>%
+  select(RESULT_DATE) %>%
+  mutate(year = format(RESULT_DATE, "%Y")) %>%
+  group_by(year) %>% summarize(n())
+```
+
+Notice that only 1 record shows `RESULT_RESOURCE` as **UPHS PAH LABORATORY**, which is not correct? His/Her EMPI is:
+```{r}
+res1 %>% filter(ORDER_ITEM_CODE == 'Q16846' & RESULT_RESOURCE == "UPHS PAH LABORATORY") %>%
+  select(EMPI)
+# res1[ORDER_ITEM_CODE == 'Q16846' & RESULT_RESOURCE == "UPHS PAH LABORATORY", EMPI]
+```
+
+
+
+##### (8) `ORDER_ITEM_CODE == 'ALREACT'`
+Check the `RESULT_ITEM_CODE` and `RESULT_RESOURCE`. 
+
+
+```{r}
+res1 %>% filter(ORDER_ITEM_CODE == 'ALREACT') %>%
+  group_by(ORDER_ITEM_CODE, ORDER_GROUP, RESULT_ITEM_CODE, RESULT_RESOURCE) %>%
+  summarise(N = n()) %>%
+  ungroup() %>%
+  arrange(desc(N)) %>%
+  print.data.frame()
+
+res1 %>%
+  filter(ORDER_ITEM_CODE == 'ALREACT') %>%
+  select(RESULT_DATE) %>%
+  mutate(year = format(RESULT_DATE, "%Y")) %>%
+  group_by(year) %>% summarize(n())
+
+res1 %>%
+  select(RESULT_DATE) %>%
+  mutate(year = format(RESULT_DATE, "%Y")) %>%
+  group_by(year) %>% summarize(n())
+
+```
+The table above shows that **ALREACT** from `ORDER_ITEM_CODE` may result in different tests, and all 3 major test labs were shown in the results. It seems hard to conclude, for now, whether **ALREACT** is also specific for one company, or just a general request. More chart review are needed here.
+
+
+TO BE CONTINUED...
+
+
+
+
+
+
+Tally RESULT_RESOURCE and MASTER_LOCATION
+```{r}
+res1 %>%
+  group_by(RESULT_RESOURCE, MASTER_LOCATION_DESCRIPTION) %>%
+  summarize(count=n()) %>%
+  ungroup() %>%
+  arrange(desc(count)) %>% print.data.frame()
+```
+

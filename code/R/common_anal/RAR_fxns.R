@@ -44,11 +44,14 @@ load_RAR <- function() {
   
   list(others=others, res1=res1)
 }
-load_RAR_specific <- function() {
+
+
+load_RAR_specific <- function(file_in="/data/raw_data/PA/HER") {
   #' Load in RAR.csv file that contains renin and aldosterone laboratory results
   #' @return data.frame
   
-  res1 <- fread("~/Downloads/RAR.csv", stringsAsFactors = F, h=T)
+  res1 <- fread(file=file_in, 
+                stringsAsFactors = F, h=T)
   res1$RESULT_ITEM_CODE <- gsub(" |,|\\/|\\#", "_", res1$RESULT_ITEM_CODE )  # replace extraneous characters
   res1$ORDER_NAME <- gsub(" ", "_", res1$ORDER_NAME )  # replace spaces
   
@@ -75,11 +78,14 @@ load_RAR_specific <- function() {
   
   res1
 }
+
+
+
 load_RAR_surround <- function() {
   #' Load in RAR_SURROUND.csv, which contains laboratory results
   #' @return data.frame
   
-  res <- read.csv("~/Downloads/RAR_SURROUND.csv", as.is = T, h=T, nrows = Inf)
+  res <- read.csv("/data/raw_data/PA/select___from_RAR_surround.csv", as.is = T, h=T, nrows = Inf)
   
   res$EMPI <- as.character(res$EMPI)
   
@@ -104,6 +110,9 @@ load_RAR_surround <- function() {
   
   others
 }
+
+
+
 consolidate_rows <- function(x) {
   #' Consolidate medication rows. Merge consecutive medication prescriptions together.
   #' - Estimate ORDER_STOP_DATE as START_DATE  + 1 month per refill + 1
@@ -137,7 +146,10 @@ consolidate_rows <- function(x) {
   }
   x
 }
-load_RAR_meds <- function(x="~/Downloads/RHTN_meds.csv") {
+
+
+### X.D.: I changed file from x="/data/raw_data/PA/select___from_RAR_meds_order_by_EMPI__si.csv" to x = "/data/raw_data/RHTN/RHTN_meds.csv" -- changed back
+load_RAR_meds <- function(x="/data/raw_data/PA/select___from_RAR_meds_order_by_EMPI__si.csv") {
   #' Load medication data in RHTN_meds.csv format
   #' @return data.frame
    
@@ -146,8 +158,8 @@ load_RAR_meds <- function(x="~/Downloads/RHTN_meds.csv") {
   
   a$EMPI <- as.character(a$EMPI)
   
-  a %<>%
-    dplyr::select(-FK_ENCOUNTER_ID, -SOURCE_LAST_UPDATE_DATE)
+  #a %<>%
+  #  dplyr::select(-FK_ENCOUNTER_ID, -SOURCE_LAST_UPDATE_DATE)
   
   # Handle dates
   a$ORDER_START_DATE <- as.POSIXct(trunc(as.POSIXlt(a$ORDER_START_DATE, format = "%d-%b-%Y %H:%M:%S"), "days"))
@@ -155,7 +167,7 @@ load_RAR_meds <- function(x="~/Downloads/RHTN_meds.csv") {
   
   # Handle refill text (coerce)
   # TODO: improve handling of text
-  a$REFILLS <- as.numeric(as.character(a$REFILLS))
+  #a$REFILLS <- as.numeric(as.character(a$REFILLS))
   
   # Hot fix to exclude some inpatient injections with different dosing patterns (than the standard oral meds), 
   # so that can summarize based on drug name
@@ -194,14 +206,16 @@ load_RAR_meds <- function(x="~/Downloads/RHTN_meds.csv") {
   col_split <- "-| in "
   mask <- with(a, grepl(x=SIMPLE_GENERIC_NAME, pattern=col_split) & 
                  !grepl(x=DOSE, pattern="-"))
-  tmp <- a %>%
+  
+  ### X.D.: The data.table nature of a cannot get unnest step through, so I change a into a data.frame temporarily
+  tmp <- as.data.frame(a) %>%
     filter(!mask) %>%
     transform(SIMPLE_GENERIC_NAME = strsplit(SIMPLE_GENERIC_NAME, col_split),
               DOSE = strsplit(DOSE, col_split)) %>%
     unnest(SIMPLE_GENERIC_NAME, DOSE)
 
   if (sum(mask))  {
-      tmp1 <- a %>%
+      tmp1 <- as.data.frame(a) %>%
         filter(mask) %>%
         transform(SIMPLE_GENERIC_NAME = strsplit(SIMPLE_GENERIC_NAME, col_split)) %>%
         transform(DOSE = lapply(SIMPLE_GENERIC_NAME, function(x) {
@@ -230,15 +244,15 @@ load_RAR_meds <- function(x="~/Downloads/RHTN_meds.csv") {
   # Consolidate orders 
   # TODO: Improve understanding of the STATUS field and how to handle
   a %<>%
-    filter(!STATUS_MASTER_DESCRIPTION %in% c("CANCELED", "DISCONTINUED")) %>%
+    # filter(!STATUS_MASTER_DESCRIPTION %in% c("CANCELED", "DISCONTINUED")) %>%
     mutate(group = paste(EMPI, SIMPLE_GENERIC_NAME, DOSE, sep="_")) %>%   # used in consolidate_rows()
     arrange(EMPI, SIMPLE_GENERIC_NAME, ORDER_START_DATE)
   
-  a %<>%
-    group_by(EMPI, SIMPLE_GENERIC_NAME) %>%
-    arrange(ORDER_START_DATE, ORDER_STOP_DATE) %>%
-    do(consolidate_rows(.)) %>%
-    dplyr::select(-EMPI, -SIMPLE_GENERIC_NAME) %>% ungroup()
+  # a %<>%
+  #   group_by(EMPI, SIMPLE_GENERIC_NAME) %>%
+  #   arrange(ORDER_START_DATE, ORDER_STOP_DATE) %>%
+  #   do(consolidate_rows(.)) %>%
+  #   dplyr::select(-EMPI, -SIMPLE_GENERIC_NAME) %>% ungroup()
   
   #Classify
   a$DRUG_CLASS <- NA
@@ -267,12 +281,15 @@ load_RAR_meds <- function(x="~/Downloads/RHTN_meds.csv") {
   
 #  row.names(a) <- 1:nrow(a)
   
+  
   a %<>%
-    dplyr::select(-PATIENT_MASTER_CLASS, -FREQUENCY_NAME, -QUANTITY, -GENERIC_NAME)
+    dplyr::select(-FREQUENCY_NAME, -QUANTITY, -GENERIC_NAME)
   
   
   a
 }
+
+
 meds_now_all <- function(x, y) {
   # What pDOSE is patient ever on?
   # Make date ranges inclusive on both sides
@@ -288,6 +305,8 @@ meds_now_all <- function(x, y) {
   )
   tmp
 }
+
+
 meds_now <- function(x, DtTm_q) {
   # What pDOSE is patient on now?
   
@@ -307,7 +326,9 @@ meds_now <- function(x, DtTm_q) {
   tmp
 }
 
-load_RAR_vitals <- function(x="~/Downloads/RAR_vitals.csv") {
+
+
+load_RAR_vitals <- function(x="/data/raw_data/PA/select___from_RAR_vitals.csv") {
   #' Load in RAR_vitals.csv vital sign information
   #' @return data.frame
   
@@ -324,6 +345,8 @@ load_RAR_vitals <- function(x="~/Downloads/RAR_vitals.csv") {
   res_vitals
 }
 
+
+
 prep_RAR <- function(a) {
   ren1 <- prep_RAR_renin(a$res1, a$others)
   
@@ -336,12 +359,17 @@ prep_RAR <- function(a) {
   
   list(ren1=ren1, rar1=rar1)
 }
+
+
+
 prep_RAR_renin <- function(res1, others) {
   
   ren1 <- res1 %>%
     filter(RESULT_ITEM_CODE %in% c("RENIN_ACTIVITY", "RENIN"))
   
-  ren1 <- merge(ren1, others, by=c("EMPI"))
+  
+  ### X.D.: got duplicates in ren1 & others, so I allowed cartesian projection here
+  ren1 <- merge(ren1, others, by=c("EMPI"), allow.cartesian = TRUE)
 
   # Pick the closest for each component
   ren1 <- ren1 %>%
