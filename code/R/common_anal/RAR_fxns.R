@@ -45,13 +45,13 @@ load_RAR <- function() {
   list(others=others, res1=res1)
 }
 
-
-load_RAR_specific <- function(file_in="/data/raw_data/PA/HER") {
+load_RAR_specific <- function(file_in = "/data/raw_data/PA/select___from_RAR.csv") {
   #' Load in RAR.csv file that contains renin and aldosterone laboratory results
   #' @return data.frame
   
   res1 <- fread(file=file_in, 
                 stringsAsFactors = F, h=T)
+
   res1$RESULT_ITEM_CODE <- gsub(" |,|\\/|\\#", "_", res1$RESULT_ITEM_CODE )  # replace extraneous characters
   res1$ORDER_NAME <- gsub(" ", "_", res1$ORDER_NAME )  # replace spaces
   
@@ -78,8 +78,6 @@ load_RAR_specific <- function(file_in="/data/raw_data/PA/HER") {
   
   res1
 }
-
-
 
 load_RAR_surround <- function() {
   #' Load in RAR_SURROUND.csv, which contains laboratory results
@@ -110,8 +108,6 @@ load_RAR_surround <- function() {
   
   others
 }
-
-
 
 consolidate_rows <- function(x) {
   #' Consolidate medication rows. Merge consecutive medication prescriptions together.
@@ -146,7 +142,6 @@ consolidate_rows <- function(x) {
   }
   x
 }
-
 
 ### X.D.: I changed file from x="/data/raw_data/PA/select___from_RAR_meds_order_by_EMPI__si.csv" to x = "/data/raw_data/RHTN/RHTN_meds.csv" -- changed back
 load_RAR_meds <- function(x="/data/raw_data/PA/select___from_RAR_meds_order_by_EMPI__si.csv") {
@@ -289,7 +284,6 @@ load_RAR_meds <- function(x="/data/raw_data/PA/select___from_RAR_meds_order_by_E
   a
 }
 
-
 meds_now_all <- function(x, y) {
   # What pDOSE is patient ever on?
   # Make date ranges inclusive on both sides
@@ -305,7 +299,6 @@ meds_now_all <- function(x, y) {
   )
   tmp
 }
-
 
 meds_now <- function(x, DtTm_q) {
   # What pDOSE is patient on now?
@@ -326,8 +319,6 @@ meds_now <- function(x, DtTm_q) {
   tmp
 }
 
-
-
 load_RAR_vitals <- function(x="/data/raw_data/PA/select___from_RAR_vitals.csv") {
   #' Load in RAR_vitals.csv vital sign information
   #' @return data.frame
@@ -345,8 +336,6 @@ load_RAR_vitals <- function(x="/data/raw_data/PA/select___from_RAR_vitals.csv") 
   res_vitals
 }
 
-
-
 prep_RAR <- function(a) {
   ren1 <- prep_RAR_renin(a$res1, a$others)
   
@@ -359,8 +348,6 @@ prep_RAR <- function(a) {
   
   list(ren1=ren1, rar1=rar1)
 }
-
-
 
 prep_RAR_renin <- function(res1, others) {
   
