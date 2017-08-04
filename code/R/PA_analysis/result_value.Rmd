@@ -512,10 +512,10 @@ chart_review_result_value.txt (10).
 -- `ORDER_GROUP != "Historical Order" & RESULT_ITEM_CODE = "ALDOSTERONE"`
 ```{r}
 res1 %>% filter(ORDER_ITEM_CODE == 'C9010005' & ORDER_GROUP != "Historical Order" & RESULT_ITEM_CODE == "ALDOSTERONE") %>%
-  group_by(ORDER_ITEM_CODE, ORDER_GROUP,ORDER_ITEM_DESCRIPTION, RESULT_ITEM_CODE, RESULT_RESOURCE, UNIT_OF_MEASURE,LOINC_CODE) %>%
+  group_by(ORDER_ITEM_CODE, ORDER_GROUP,ORDER_ITEM_DESCRIPTION, RESULT_ITEM_CODE, RESULT_RESOURCE,LOINC_CODE) %>%
   summarise(N = n()) %>%
   ungroup() %>%
-  arrange(RESULT_ITEM_CODE) %>%
+  arrange(RESULT_RESOURCE) %>%
   print.data.frame()
 ```
 
@@ -528,8 +528,144 @@ res1 %>% filter(ORDER_ITEM_CODE == 'C9010005' & ORDER_GROUP != "Historical Order
   arrange(RESULT_ITEM_CODE) %>%
   print.data.frame()
 ```
-
+Note they all share the same unit here: "ng/dL"
 chart_review_result_value.txt (11).
+
+==> Conclusion: Lab: Labcorp
+                Test: Aldosterone
+                Method: ALDOSTERONE, LC/MS/MS
+
+
+--------- RESULT_RESOURCE = "LANCASTER GENERAL"
+```{r}
+res1 %>% filter(ORDER_ITEM_CODE == 'C9010005' & ORDER_GROUP != "Historical Order" & RESULT_ITEM_CODE == "ALDOSTERONE" & RESULT_RESOURCE == "LANCASTER GENERAL") %>%
+  group_by(ORDER_ITEM_CODE, ORDER_GROUP,ORDER_ITEM_DESCRIPTION, RESULT_ITEM_CODE, RESULT_RESOURCE, UNIT_OF_MEASURE,LOINC_CODE) %>%
+  summarise(N = n()) %>%
+  ungroup() %>%
+  arrange(RESULT_ITEM_CODE) %>%
+  print.data.frame()
+```
+chart_review_result_value.txt (12).
+
+==> Conclusion: Lab: Quest
+                Test: Aldosterone
+                Method: ALDOSTERONE, LC/MS/MS
+ 
+
+
+
+
+
+--------- RESULT_RESOURCE = "UPHS CERNMILL LABORATORY"
+```{r}
+res1 %>% filter(ORDER_ITEM_CODE == 'C9010005' & ORDER_GROUP != "Historical Order" & RESULT_ITEM_CODE == "ALDOSTERONE" & RESULT_RESOURCE == "UPHS CERNMILL LABORATORY") %>%
+  group_by(ORDER_ITEM_CODE, ORDER_GROUP,ORDER_ITEM_DESCRIPTION, RESULT_ITEM_CODE, RESULT_RESOURCE, UNIT_OF_MEASURE,LOINC_CODE) %>%
+  summarise(N = n()) %>%
+  ungroup() %>%
+  arrange(RESULT_ITEM_CODE) %>%
+  print.data.frame()
+```
+345 in total.
+```{r}
+temp <- res1 %>% filter(ORDER_ITEM_CODE == 'C9010005' & ORDER_GROUP != "Historical Order" & RESULT_ITEM_CODE == "ALDOSTERONE" & RESULT_RESOURCE == "UPHS CERNMILL LABORATORY")
+
+sum(temp$RESULT_TEXT == "")
+sum(grepl("arup", temp$RESULT_TEXT))
+```
+All records with result text include "arup".
+
+Chart review on those without result text. chart_review_result_value.txt (13).
+
+==> Conclusion: Lab: ARUP
+                Test: Aldosterone
+                Method: Quantitative Chemiluminescent Immunoassay
+                
+    
+
+
+--------- RESULT_RESOURCE = "CCH SUNQUEST"
+```{r}
+res1 %>% filter(ORDER_ITEM_CODE == 'C9010005' & ORDER_GROUP != "Historical Order" & RESULT_ITEM_CODE == "ALDOSTERONE" & RESULT_RESOURCE == "CCH SUNQUEST") %>%
+  group_by(ORDER_ITEM_CODE, ORDER_GROUP,ORDER_ITEM_DESCRIPTION, RESULT_ITEM_CODE, RESULT_RESOURCE, UNIT_OF_MEASURE,LOINC_CODE) %>%
+  summarise(N = n()) %>%
+  ungroup() %>%
+  arrange(RESULT_ITEM_CODE) %>%
+  print.data.frame()
+```
+chart_review_result_value.txt (14).
+
+==> Conclusion: Lab: ARUP
+                Test: Aldosterone
+                Method: Quantitative Chemiluminescent Immunoassay
+                
+
+--------- RESULT_RESOURCE = "PENN LAB"/"UPHS LAB"/"UPHS LABORATORY"/"UPHS PAH LAB INCOMING"/"UPHS PAH LABORATORY"   
+
+```{r}
+res1 %>% filter(ORDER_ITEM_CODE == 'C9010005' & ORDER_GROUP != "Historical Order" & RESULT_ITEM_CODE == "ALDOSTERONE" & RESULT_RESOURCE %in% c("PENN LAB", "UPHS LAB", "UPHS LABORATORY", "UPHS PAH LAB INCOMING", "UPHS PAH LABORATORY" )) %>%
+  group_by(ORDER_ITEM_CODE,ORDER_ITEM_DESCRIPTION, RESULT_ITEM_CODE, RESULT_RESOURCE, UNIT_OF_MEASURE,LOINC_CODE) %>%
+  summarise(N = n()) %>%
+  ungroup() %>%
+  arrange(RESULT_ITEM_CODE) %>%
+  print.data.frame()
+```
+chart_review_result_value.txt (15).
+
+==> Conclusion: Lab: ARUP
+                Test: Aldosterone
+                Method: Quantitative Chemiluminescent Immunoassay
+                
+--------- RESULT_RESOURCE = ""   
+
+```{r}
+res1 %>% filter(ORDER_ITEM_CODE == 'C9010005' & ORDER_GROUP != "Historical Order" & RESULT_ITEM_CODE == "ALDOSTERONE" & RESULT_RESOURCE == "") %>%
+  group_by(ORDER_ITEM_CODE,ORDER_ITEM_DESCRIPTION, ORDER_GROUP,RESULT_ITEM_CODE, RESULT_RESOURCE, UNIT_OF_MEASURE,LOINC_CODE) %>%
+  summarise(N = n()) %>%
+  ungroup() %>%
+  arrange(RESULT_ITEM_CODE) %>%
+  print.data.frame()
+```
+
+Filter out those whose RESULT_TEXT does not contain "arup"
+```{r}
+res1 %>% filter(ORDER_ITEM_CODE == 'C9010005' & ORDER_GROUP != "Historical Order" & RESULT_ITEM_CODE == "ALDOSTERONE" & RESULT_RESOURCE == "" & !grepl("arup",RESULT_TEXT)) %>%
+  group_by(ORDER_ITEM_CODE,ORDER_ITEM_DESCRIPTION, ORDER_GROUP,RESULT_ITEM_CODE, RESULT_RESOURCE, UNIT_OF_MEASURE,LOINC_CODE) %>%
+  summarise(N = n()) %>%
+  ungroup() %>%
+  arrange(RESULT_ITEM_CODE) %>%
+  print.data.frame()
+```
+
+chart_review_result_value.txt (16).
+
+==> Conclusion: (1) RESULT_TEXT contains "arup":
+                        Lab: ARUP
+                        Test: Aldosterone
+                        Method: Quantitative Chemiluminescent Immunoassay
+                (2) RESULT_TEXT does not contain "arup":
+                        Lab: unknown
+                        Test: Aldosterone
+                        Method: unknown
+    
+
+
+See what's left:
+```{r}
+res1 %>% filter(ORDER_ITEM_CODE == 'C9010005' & ORDER_GROUP != "Historical Order" & !(RESULT_ITEM_CODE %in% c("ALDOSTERONE, LC/MS/MS", "ALDOSTERONE"))) %>%
+  group_by(ORDER_ITEM_CODE,ORDER_ITEM_DESCRIPTION, RESULT_ITEM_CODE, RESULT_RESOURCE) %>%
+  summarise(N = n()) %>%
+  ungroup() %>%
+  arrange(RESULT_ITEM_CODE) %>%
+  print.data.frame()
+```
+One renin record. Exclude.
+
+
+
+
+
+
+
 
 
 

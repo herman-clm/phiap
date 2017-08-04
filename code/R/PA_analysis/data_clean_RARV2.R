@@ -4,33 +4,16 @@ setwd("~/repos/Daniel_Herman_Aldosterone_2017_03/code/R/PA_analysis")
 library(dplyr)
 library(data.table)
 library(tibble)
-source("/home/dingxi/repos/Daniel_Herman_Aldosterone_2017_03/code/R/common_anal/R_fxns.R")
+source("../common_anal/R_fxns.R")
+source("pre_RARV2.R")
 
+# read in raw data, and make some pre-process
 
-res1 <- fread("/data/raw_data/PA/HERMANDA_RARV2.csv", stringsAsFactors = FALSE, header = TRUE)
-
-
-res1$ORDER_START_DATE <- as.POSIXct(res1$ORDER_START_DATE, format = '%Y-%m-%d %H:%M:%S')
-res1$BIRTH_DATE <- as.POSIXct(res1$BIRTH_DATE, format = '%Y-%m-%d %H:%M:%S')
-res1$RESULT_DATE <- as.POSIXct(res1$RESULT_DATE, format = '%Y-%m-%d %H:%M:%S')
-res1$PERFORMED_DATE <- as.POSIXct(res1$PERFORMED_DATE, format = '%Y-%m-%d %H:%M:%S')
-
-
-res1$GENDER_MASTER_CODE <- as.factor(res1$GENDER_MASTER_CODE)
-res1$EMPI <- as.character(res1$EMPI)
-
-
-# Create provider field that defaults to ORDERING_PROV, and if empty ADMITTING_PROV
-
-res1$prov <- res1$ORDERING_PROV
-res1$prov[which(res1$prov=="")] <- res1$ADMITTING_PROV[which(res1$prov=="")]  
-
-
-res1$Age <- floor(as.numeric(res1$ORDER_START_DATE - res1$BIRTH_DATE)/365.25)
-
-
-
-## (0)  Exclude ORDER_ITEM_CODE in c("")
+res1 <- pre_rar("/data/raw_data/PA/HERMANDA_RARV2.csv")
+  
+  
+# Start funciton hear
+## (0)  Exclude ORDER_ITEM_CODE that are for AVS or urine specimens
 res1 <- res1[!(ORDER_ITEM_CODE %in% c("C9009900", "C9009995", "C9009997", "Q19573", "83497A"))]
 
 
@@ -42,58 +25,165 @@ c71$Test <- "unknown"
 c71$Method <- "unknown"
 
 ####### ORDER_GROUP == "Historical Order"
-c71 <- c71[ORDER_GROUP == "Historical Order" & RESULT_ITEM_CODE == "PLASMA RENIN ACTIVITY", 
+c71 <- c71[ORDER_GROUP == "Historical Order" & 
+             RESULT_ITEM_CODE == "PLASMA RENIN ACTIVITY", 
            c("Lab","Test","Method") := list("unknown", "Renin Activity","unknown")]
 
-c71 <- c71[ORDER_GROUP == "Historical Order" & RESULT_ITEM_CODE == "RENIN",
+c71 <- c71[ORDER_GROUP == "Historical Order" & 
+             RESULT_ITEM_CODE == "RENIN",
            c("Lab","Test","Method") := list("unknown", "Renin Activity","unknown")]
 
 # Exclude other "Historical Order"
-c71 <- c71[(ORDER_GROUP == "Historical Order" & RESULT_ITEM_CODE %in% c("PLASMA RENIN ACTIVITY", "RENIN")) | ORDER_GROUP != "Historical Order"]
+c71 <- c71[(ORDER_GROUP == "Historical Order" & 
+              RESULT_ITEM_CODE %in% c("PLASMA RENIN ACTIVITY", "RENIN")) | 
+             ORDER_GROUP != "Historical Order"]
 
 
 ####### ORDER_GROUP != "Historical Order"
-c71[ORDER_GROUP != "Historical Order" & RESULT_RESOURCE ==  "QUEST" & RESULT_ITEM_CODE == "PLASMA RENIN ACTIVITY, LC/MS/MS",
+c71[ORDER_GROUP != "Historical Order" & 
+      RESULT_RESOURCE ==  "QUEST" & 
+      RESULT_ITEM_CODE == "PLASMA RENIN ACTIVITY, LC/MS/MS",
     c("Lab","Test","Method") := list("Quest", "Renin Activity","Plasma Renin Activity, LC/MS/MS")]
 
-c71[ORDER_GROUP != "Historical Order" & RESULT_RESOURCE ==  "QUEST" & RESULT_ITEM_CODE != "PLASMA RENIN ACTIVITY, LC/MS/MS",
+c71[ORDER_GROUP != "Historical Order" & 
+      RESULT_RESOURCE ==  "QUEST" & 
+      RESULT_ITEM_CODE != "PLASMA RENIN ACTIVITY, LC/MS/MS",
     c("Lab","Test","Method") := list("unknown", "Renin","unknown")]
 
 
-c71[ORDER_GROUP != "Historical Order" & RESULT_RESOURCE !=  "QUEST" & RESULT_ITEM_CODE == "RENIN" & RESULT_RESOURCE == "LANCASTER GENERAL",
+c71[ORDER_GROUP != "Historical Order" & 
+      RESULT_RESOURCE !=  "QUEST" & 
+      RESULT_ITEM_CODE == "RENIN" & 
+      RESULT_RESOURCE == "LANCASTER GENERAL",
     c("Lab","Test","Method") := list("Quest", "Renin Activity","Renin Activity")]
 
-c71[ORDER_GROUP != "Historical Order" & RESULT_RESOURCE !=  "QUEST" & RESULT_ITEM_CODE == "RENIN" & RESULT_RESOURCE == "LABCORP",
+c71[ORDER_GROUP != "Historical Order" & 
+      RESULT_RESOURCE !=  "QUEST" & 
+      RESULT_ITEM_CODE == "RENIN" & 
+      RESULT_RESOURCE == "LABCORP",
     c("Lab","Test","Method") := list("Labcorp", "Renin Activity","Renin Activity, Plasma")]
 
-c71[ORDER_GROUP != "Historical Order" & RESULT_RESOURCE !=  "QUEST" & RESULT_ITEM_CODE == "RENIN" & !(RESULT_RESOURCE %in% c("LABCORP", "LANCASTER GENERAL")) & UNIT_OF_MEASURE %in% c("NGMLHR", "ngmLhr","ng/mL/hr"),
+c71[ORDER_GROUP != "Historical Order" & 
+      RESULT_RESOURCE !=  "QUEST" & 
+      RESULT_ITEM_CODE == "RENIN" & 
+      !(RESULT_RESOURCE %in% c("LABCORP", "LANCASTER GENERAL")) & 
+      UNIT_OF_MEASURE %in% c("NGMLHR", "ngmLhr","ng/mL/hr"),
     c("Lab","Test","Method") := list("ARUP", "Renin Activity","Renin Activity, Plasma")]
 
-c71[ORDER_GROUP != "Historical Order" & RESULT_RESOURCE !=  "QUEST" & RESULT_ITEM_CODE == "RENIN" & !(RESULT_RESOURCE %in% c("LABCORP", "LANCASTER GENERAL")) & !(UNIT_OF_MEASURE %in% c("NGMLHR", "ngmLhr","ng/mL/hr")) & grepl("arup", RESULT_TEXT),
+c71[ORDER_GROUP != "Historical Order" & 
+      RESULT_RESOURCE !=  "QUEST" & 
+      RESULT_ITEM_CODE == "RENIN" & 
+      !(RESULT_RESOURCE %in% c("LABCORP", "LANCASTER GENERAL")) & 
+      !(UNIT_OF_MEASURE %in% c("NGMLHR", "ngmLhr","ng/mL/hr")) & 
+      grepl("arup", RESULT_TEXT),
     c("Lab","Test","Method") := list("ARUP", "Renin Activity","Renin Activity, Plasma")]
 
-c71[ORDER_GROUP != "Historical Order" & RESULT_RESOURCE !=  "QUEST" & RESULT_ITEM_CODE == "RENIN" & !(RESULT_RESOURCE %in% c("LABCORP", "LANCASTER GENERAL")) & !(UNIT_OF_MEASURE %in% c("NGMLHR", "ngmLhr","ng/mL/hr")) & !grepl("arup", RESULT_TEXT),
+c71[ORDER_GROUP != "Historical Order" & 
+      RESULT_RESOURCE !=  "QUEST" & 
+      RESULT_ITEM_CODE == "RENIN" & 
+      !(RESULT_RESOURCE %in% c("LABCORP", "LANCASTER GENERAL")) & 
+      !(UNIT_OF_MEASURE %in% c("NGMLHR", "ngmLhr","ng/mL/hr")) & 
+      !grepl("arup", RESULT_TEXT),
     c("Lab","Test","Method") := list("unknown", "Renin Activity","Renin Activity, Plasma")]
 
 
 
 
-c71[ORDER_GROUP != "Historical Order" & RESULT_RESOURCE !=  "QUEST" & RESULT_ITEM_CODE == "RENIN ACTIVITY",
+c71[ORDER_GROUP != "Historical Order" & 
+      RESULT_RESOURCE !=  "QUEST" & 
+      RESULT_ITEM_CODE == "RENIN ACTIVITY",
     c("Lab","Test","Method") := list("ARUP", "Renin Activity","Renin Activity, Plasma")]
 
 
-c71[ORDER_GROUP != "Historical Order" & RESULT_RESOURCE !=  "QUEST" & RESULT_ITEM_CODE == "PLASMA RENIN ACTIVITY",
+c71[ORDER_GROUP != "Historical Order" & 
+      RESULT_RESOURCE !=  "QUEST" & 
+      RESULT_ITEM_CODE == "PLASMA RENIN ACTIVITY",
     c("Lab","Test","Method") := list("Quest", "Renin Activity","Renin Activity, Plasma")]
 
 
-c71[ORDER_GROUP != "Historical Order" & RESULT_RESOURCE !=  "QUEST" & RESULT_ITEM_CODE == "PLASMA RENIN ACTIVITY",
+c71[ORDER_GROUP != "Historical Order" & 
+      RESULT_RESOURCE !=  "QUEST" & 
+      RESULT_ITEM_CODE == "PLASMA RENIN ACTIVITY",
     c("Lab","Test","Method") := list("Quest", "Renin Activity","Renin Activity, Plasma")]
 
-c71 <-  c71[!(ORDER_GROUP != "Historical Order" & RESULT_RESOURCE != "QUEST" & !(RESULT_ITEM_CODE %in% c("RENIN", "RENIN ACTIVITY", "PLASMA RENIN ACTIVITY")))]
+c71 <-  c71[!(ORDER_GROUP != "Historical Order" & 
+                RESULT_RESOURCE != "QUEST" & 
+                !(RESULT_ITEM_CODE %in% c("RENIN", "RENIN ACTIVITY", "PLASMA RENIN ACTIVITY")))]
 
+# #dat <- bind_rows(c71,
+#                  ....)
+# return(dat)
+# }
 #########
 ## End ##
 #########
 
 ## (2) Clean up ORDER_ITEM_CODE == "C9010005"
+c9105 <- res1[(ORDER_ITEM_CODE == "C9010005")]
 
+
+
+c9105$Lab <- "unknown"
+c9105$Test <- "unknown"
+c9105$Method <- "unknown"
+
+
+####### ORDER_GROUP == "Historical Order"
+c9105[ORDER_GROUP == "Historical Order" & 
+      RESULT_ITEM_CODE == "ALDOSTERONE",
+    c("Lab","Test","Method") := list("unknown", "Aldosterone","unknown")]
+
+
+# Exclude other "Historical Order"
+c9105 <- c9105[!(ORDER_GROUP == "Historical Order" &
+                 RESULT_ITEM_CODE != "ALDOSTERONE")]
+
+
+####### ORDER_GROUP != "Historical Order"
+c9105 <- c9105[ORDER_GROUP != "Historical Order" &
+                 RESULT_ITEM_CODE == "ALDOSTERONE, LC/MS/MS",
+               c("Lab","Test","Method") := list("Quest", "Aldosterone","Aldosteron, LC/MS/MS")]
+
+
+c9105 <- c9105[ORDER_GROUP != "Historical Order" &
+                 RESULT_ITEM_CODE == "ALDOSTERONE" &
+                 RESULT_RESOURCE == "LABCORP",
+               c("Lab","Test","Method") := list("Labcorp", "Aldosterone","Aldosteron, LC/MS/MS")]
+
+c9105 <- c9105[ORDER_GROUP != "Historical Order" &
+                 RESULT_ITEM_CODE == "ALDOSTERONE" &
+                 RESULT_RESOURCE == "LANCASTER GENERAL",
+               c("Lab","Test","Method") := list("Quest", "Aldosterone","Aldosteron, LC/MS/MS")]
+
+c9105 <- c9105[ORDER_GROUP != "Historical Order" &
+                 RESULT_ITEM_CODE == "ALDOSTERONE" &
+                 RESULT_RESOURCE %in% c("UPHS CERNMILL LABORATORY", "CCH SUNQUEST", "PENN LAB", "UPHS LAB", "UPHS LABORATORY", "UPHS PAH LAB INCOMING", "UPHS PAH LABORATORY"),
+               c("Lab","Test","Method") := list("ARUP", "Aldosterone","Quantitative Chemiluminescent Immunoassay")]
+
+
+c9105 <- c9105[ORDER_GROUP != "Historical Order" &
+                 RESULT_ITEM_CODE == "ALDOSTERONE" &
+                 RESULT_RESOURCE == "" & 
+                 grepl("arup", RESULT_TEXT),
+               c("Lab","Test","Method") := list("ARUP", "Aldosterone","Quantitative Chemiluminescent Immunoassay")]
+
+
+c9105 <- c9105[ORDER_GROUP != "Historical Order" &
+                 RESULT_ITEM_CODE == "ALDOSTERONE" &
+                 RESULT_RESOURCE == "" & 
+                 !grepl("arup", RESULT_TEXT),
+               c("Lab","Test","Method") := list("unknown", "Aldosterone","unknown")]
+
+c9105 <- c9105[ORDER_GROUP == "Historical Order" |
+                 RESULT_ITEM_CODE %in% c("ALDOSTERONE, LC/MS/MS", "ALDOSTERONE")]
+
+
+
+
+
+
+
+##################    Save New cleaned data set
+res1 <- rbind(c71, c9105)
+
+save(res1, file = "RAR.RData")
