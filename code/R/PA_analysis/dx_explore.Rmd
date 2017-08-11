@@ -8,6 +8,7 @@ params:
 ---
 ```{r setup, include=FALSE, echo=FALSE, cache=FALSE}
 setwd("~/repos/Daniel_Herman_Aldosterone_2017_03/code/R/PA_analysis")
+library(tibble)
 suppressMessages(library(dplyr))
 suppressMessages(library(data.table))
 suppressMessages(library(lubridate))
@@ -21,39 +22,41 @@ suppressMessages(suppressWarnings(library(logging)))
 
 # load RAR data
 source("pre_RARV2.R")
-res1 <- pre_rar("/data/raw_data/PA/HERMANDA_RARV2.csv")
-
 ```
 
+```{r load_data, cache=TRUE}
+res1 <- pre_rar(dat_file_in = "/data/raw_data/PA/HERMANDA_RARV2.csv")
+```
 
-```{r, echo=FALSE}
+```{r load_dx, echo=FALSE}
 dx <- fread("/data/raw_data/PA/HERMANDA_ALDO_DX.csv", stringsAsFactors = FALSE, header = TRUE)
 
 temp <- fread("/data/raw_data/PA/HERMANDA_RAR_DX.csv", stringsAsFactors = FALSE, header = TRUE)
-
 
 # make EMPI, MRN, PK_ENCOUNTER_ID, VISIT_NUMBER_NUM as characters
 dx$EMPI <- as.character(dx$EMPI)
 dx$MRN <- as.character(dx$MRN)
 dx$PK_ENCOUNTER_ID <- as.character(dx$PK_ENCOUNTER_ID)
-dx$VISIT_NUMBER_NUM <- as.character(dx$VISIT_NUMBER_NUM)
-
+dx$VISIT_NUMBER_NUM <- as.character(dx$VISIT_NUMBER_NUM)  # resolve CHAR vs NUM
 
 # change date
 dx$ENC_DATE <- as.POSIXct(dx$ENC_DATE, format = "%Y-%m-%d %H:%M:%S")
 dx$CODING_DATE <- as.POSIXct(dx$CODING_DATE, format = "%Y-%m-%d %H:%M:%S")
 
-
 dx$PRIMARY_YN <- ifelse(dx$PRIMARY_YN == 0, FALSE, TRUE)
 
+#dx <- as.tibble(dx)
 dx <- as.data.frame(dx)
-length(unique(dx$EMPI))
-length(unique(temp$EMPI))
-summary(dx)
 
 ```
-There are only 843 distinct EMPI's in HERMANDA_ALDO_DX.csv
-There are 8075 distinct EMPI's in HERMANDA_RAR_DX.csv
+
+```{r dx_sum}
+summary(dx)
+```
+
+
+There are only `r length(unique(dx$EMPI))` distinct EMPI's in HERMANDA_ALDO_DX.csv
+There are `r length(unique(temp$EMPI))` distinct EMPI's in HERMANDA_RAR_DX.csv
 
 
 ICD 9/10 codes: time
@@ -124,6 +127,12 @@ dx %>% filter(CODE == "255.11") %>%
 
 
 ### PRIMARY_YN/DX_SEQUENCE
+```{r}
+dx %>% 
+  filter(PRIMARY_YN == 1 & DX_SEQUENCE != 1) %>%
+  select(EMPI, CODE, ENC_DATE, DX_SEQUENCE, DX_TYPE)
+
+```
 
 ```{r}
 dx %>%  
@@ -214,7 +223,8 @@ Some patient has 100+ Dx...
 Add Dx time stamps into Test Results. For now, use the earlist Dx date.   
 Have a check on those whose first Dx dates are BEFORE tests
 ```{r}
-first_dx <- dx %>% filter(EMPI %in% dx_empi$EMPI) %>%
+first_dx <- dx %>% 
+  filter(EMPI %in% dx_empi$EMPI) %>%
   group_by(EMPI) %>%
   summarise(DX_Date = min(ENC_DATE))
 
@@ -326,16 +336,6 @@ temp %>% filter(EMPI %in% temp_empi$EMPI) %>%
 
 
 
-
-
-
-
-
-```{r}
-temp <- fread(file = "/data/raw_data/PA/HERMANDA_RAR_MEDS.csv", stringsAsFactors = FALSE, header = TRUE)
-
-
-```
 
 
 

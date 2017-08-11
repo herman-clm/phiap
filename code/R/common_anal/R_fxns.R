@@ -48,7 +48,7 @@ numericize <- function(x, adjust_up=1.05, adjust_down=0.95) {
        ifelse(x1[mask] == "<", tmp_rest * adjust_down, 
               tmp_rest))
   x[mask] <- tmp
-  x <- as.numeric(x)
+  x <- suppressWarnings(as.numeric(x))
   return(x)
 }
 classify_result <- function(res, estimate_percentile=FALSE, log_list=c("TSH")) {
