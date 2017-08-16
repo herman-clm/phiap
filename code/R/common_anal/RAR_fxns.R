@@ -1,5 +1,5 @@
 library(assertthat)
-source("R_fxns.R")
+source("../common_anal/R_fxns.R")
 suppressMessages(library(data.table))
 
 load_RAR <- function() {
@@ -421,4 +421,223 @@ prep_RAR_renin <- function(res1, others) {
   ren1
 }
 
+
+
+
+load_RAR_enc <- function(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_ENC.csv", bp_only = FALSE, HAR_Level = TRUE, outpatient_only = TRUE){
+  #' Load in the RAR Encounter data, and do some basic cleaning
+  #' @param dat_file string Raw data text file location 
+  #' @param bp_only logic If TRUE, only keep BP's, excluding all other detailed info. Default is FALSE
+  #' @param HAR_Level logic If TRUE, collapse into HAR Level. Default is TRUE
+  #' @param outpatient_only logic If TRUE, only include Outpatients. Default is TRUE
+  #' @return rar_enc tibble pre-processed RAR Dx data
+  
+  # read in raw data file
+  rar_enc <- fread(dat_file, header = TRUE, stringsAsFactors = FALSE)
+  
+  # Modify ID's and DateTime
+  rar_enc <- id_date(rar_enc)
+  
+  if(outpatient_only){
+    rar_enc %<>% filter(PATIENT_MASTER_CLASS == "OUTPATIENT")
+  }
+  
+  
+  if(bp_only){
+    # only keep BP's
+    rar_enc %<>% filter(!(is.na(BP_SYSTOLIC) | is.na(BP_DIASTOLIC))) %>%
+      select(EMPI, PK_ENCOUNTER_ID, ENC_DATE, E_SOURCE_LAST_UPDATE, HAR_NUMBER, 
+             BP_SYSTOLIC, BP_DIASTOLIC)
+  }
+  
+  
+  
+  # Create new HAR: HAR_NUMBER or EMPI + ENC Date
+  rar_enc$HAR <- ifelse(is.na(rar_enc$HAR_NUMBER), 
+                        paste(rar_enc$EMPI, format(rar_enc$ENC_DATE, "%Y-%m-%d")),
+                        rar_enc$HAR_NUMBER)
+  
+  if(HAR_Level){
+    # collapse into HAR_NUMBER Level
+    ##  For duplicated HAR, use the latest E_SOURCE_LAST_UPDATE
+    ##  TODO: Instead of using first record, use the median one
+    rar_enc %<>% group_by(HAR) %>%
+      arrange(desc(E_SOURCE_LAST_UPDATE)) %>%
+      filter(row_number() == 1)
+    
+  }
+  
+  # TODO: If HAR_Level = FALSE, need to collapse into PK_ENCOUNTER_ID level
+  
+  return(rar_enc)
+  
+  
+}
+
+
+load_RAR_Dx <- function(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_DX.csv"){
+  #' Load in the RAR Dx data, and do some basic cleaning
+  #' @param dat_file string Raw data text file location 
+  #' @return rar_dx tibble pre-processed RAR Dx data
+  
+  # read in file
+  rar_dx <- fread(file = dat_file, header = TRUE, stringsAsFactors = FALSE)
+  
+  # remove those without ICD indicator (Since they also do not have CODE)
+  rar_dx <- rar_dx[CODE_STANDARD_NAME != ""]
+  
+  
+  # Modify ID and DateTime
+  rar_dx <- id_date(rar_dx)
+  
+  # change PRIMARY_YN into factor
+  rar_dx$PRIMARY_YN <- ifelse(rar_dx$PRIMARY_YN == 1, TRUE, FALSE)
+  
+  
+
+  rar_dx <- as.tibble(rar_dx)
+  return(rar_dx)
+  
+}
+
+sub_RAR_dx <- function(dat, ALDO.Dx = TRUE, HTN.Dx = TRUE, n.Dx = 10, HAR_Level = TRUE, outpatient_only = TRUE){
+  #' Getting the proper subset for Dx data
+  #' @param dat tibble Pre-processed RAR Dx data
+  #' @param ALDO.Dx logit Whether to include ALDO Dx's. Default is TRUE
+  #' @param HTN.Dx logit Whether to include hypertension Dx's. Default is TRUE
+  #' @param n.Dx numeric Number of total Dx's included, ALDO/HTN excluded. Default is 10
+  #' @param HAR_Level logit If TRUE, collapse data into HAR Level. Default is TRUE
+  #' @param outpatient_only logit If TRUE, only include Outpatients. Default is TRUE.
+  #' @return ret tibble The subset of cleaned Dx data
+  
+  ret <- tibble()
+  
+  if(outpatient_only){
+    dat %<>% filter(PATIENT_MASTER_CLASS == "OUTPATIENT")
+  }
+  
+  
+  # get ALDO Dx's, in a higher level
+  if(ALDO.Dx){
+    # catch Hyperaldo in a higher level
+    ret <- dat %>% filter(CODE_STANDARD_NAME == "ICD-10" & grepl("E26\\.*", CODE))
+   
+    ret <- dat %>% filter(CODE_STANDARD_NAME == "ICD9" & grepl("255\\.1", CODE)) %>% rbind(.,ret)
+    
+    aldo_dx <- unique(ret$CODE)
+    nd <- length(unique(ret$CODE))
+  }
+  
+  # get HTN Dx's, in a higher level
+  if(HTN.Dx){
+    ret <- dat %>% filter(CODE_STANDARD_NAME == "ICD-10" & grepl("I10|I15", CODE))
+    
+    ret <- dat %>% filter(CODE_STANDARD_NAME == "ICD9" & grepl("401|405", CODE)) %>% rbind(.,ret)
+    
+  }
+  
+  if(n.Dx != 0){
+    dx_left <- dat %>% filter(!(CODE %in% aldo_dx)) %>% 
+      group_by(CODE) %>%
+      summarise(N=n()) %>%
+      arrange(desc(N)) %>%
+      slice(., 1:n.Dx)
+    
+    ret <- dat %>% filter(CODE %in% dx_left$CODE) %>% rbind(., ret)
+  }
+  
+  
+  # Create new HAR: HAR_NUMBER or EMPI + ENC Date
+  ret$HAR <- ifelse(is.na(ret$HAR_NUMBER), 
+                        paste(ret$EMPI, format(ret$ENC_DATE, "%Y-%m-%d")),
+                        ret$HAR_NUMBER)
+  
+  
+  if(HAR_Level){
+    # collapse into HAR_NUMBER Level
+    ##  For duplicated HAR, use the latest SOURCE_LAST_UPDATE, if same:
+    ## (1) Pick PRIMARY_YN = TRUE, [first of desc(PRIMARY_YN), NA will always be the last]
+    ## (2) DX_SEQUENCE minimal [first of arrange(DX_SEQUENCE), NA will be last]
+    ## (3) First of arrange(desc(SOURCE_LAST_UPDATE_DATE), desc(COMMENTS)) [This will avoid "" in COMMENTS]
+    
+    ret %<>% 
+      group_by(HAR) %>%
+      arrange(desc(SOURCE_LAST_UPDATE_DATE), 
+              desc(PRIMARY_YN), DX_SEQUENCE, desc(COMMENTS)) %>% # Pick a single code (for now)
+      filter(row_number() == 1)
+    
+    
+
+  
+    
+  }
+  
+  # TODO: If HAR_Level = FALSE, need to collapse into PK_ENCOUNTER_ID level
+  return(ret)
+  
+}
+
+
+
+load_RAR_PtDemo <- function(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_DEMO.csv"){
+  #' Load in the RAR Patients' Demo data, and do some basic cleaning
+  #' @param dat_file string Raw data text file location 
+  #' @return rar_demo tibble pre-processed RAR Dx data
+  
+  # read in raw data
+  rar_demo <- fread(dat_file, header = TRUE, stringsAsFactors = FALSE)
+  
+  # Modify ID and DateTime
+  rar_demo <- id_date(rar_demo)
+  
+  # For EMPI's with more than 1 PK_ENCOUNTER_ID
+  # This method will first deal with NA in Gender, then RACE (UNKNOWN)
+  # TODO: get timetamps on the patient table (so can pick based on that PK_PATIENT_ID dates)
+  rar_demo %<>% group_by(EMPI) %>%
+    arrange(EMPI, GENDER_MASTER_CODE, desc(RACE_MASTER_CODE)) %>%
+    filter(row_number() == n())
+  
+  
+  # Factorize
+  rar_demo$GENDER._MASTER_CODE <- factor(rar_demo$GENDER_MASTER_CODE, levels = c("F","M"))
+  # All other will be NA, like UNKNOWN
+  rar_demo$RACE_MASTER_CODE <- factor(rar_demo$RACE_MASTER_CODE, levels = c("BLACK", "WHITE","OTHER","AM IND AK NATIVE", "ASIAN", "HI PAC ISLAND", "MIXED"))
+  
+  
+  return(rar_demo)
+  
+}
+
+
+
+load_RAR_Lab <- function(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_LABS.csv", Result_Status = "Final", potassium = FALSE, adjust_up = 1.5, adjust_down = 0.5){
+  #' Load in the RAR Lab data, and do some basic cleaning
+  #' @param dat_file string Raw data text file location 
+  #' @param Result_Status string If "Final", then only include RESULT_STATUS = "Final"
+  #' Otherwise, include all labs.
+  #' @param adjust_up numeric Rate for adjusting "> X", default is 0.5
+  #' @param adjust_donw numeric Rate for adjusting "< X", default is 1.5
+  #' @param potassium logit If TRUE, potassium lab results will be included. Default is FALSE
+  #' @return rar_lab tibble pre-processed RAR Dx data
+  
+  # read in file
+  rar_lab <- fread(file = dat_file, header = TRUE, stringsAsFactors = FALSE)
+  
+  
+  # Whether to select only "Final"
+  if(Result_Status == "Final"){
+    rar_lab <- rar_lab[RESULT_STATUS == "Final"]
+  }
+  
+  # Modify ID and DateTime
+  rar_lab <- id_date(rar_lab)
+  
+  # modify RESULT_VALUE, using numericize function
+  rar_lab$RESULT_VALUE <- numericize(rar_lab$RESULT_VALUE, adjust_up = adjust_up, adjust_down = adjust_down)
+  
+
+  
+  return(rar_lab)
+  
+}
 

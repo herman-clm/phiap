@@ -1,0 +1,260 @@
+---
+title: "RAR Related Raw Data"
+output: html_document
+---
+
+## HERMANDA_RAR_PTS_DEMO.csv
+```{r setup, include=FALSE, echo=FALSE, cache=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(data.table)
+library(tibble)
+setwd("~/repos/Daniel_Herman_Aldosterone_2017_03/code/R/PA_analysis")
+
+```
+
+Read in patients' demographis info, HERMANDA_RAR_PTS_DEMO.csv
+```{r load in data, echo=FALSE, cache=TRUE}
+rar_demo <- fread(file = "/data/raw_data/PA/HERMANDA_RAR_PTS_DEMO.csv", header = TRUE, stringsAsFactors = FALSE)
+```
+
+```{r Clean a little}
+rar_demo <- id_date(rar_demo)
+
+sum(duplicated(rar_demo)) # no duplicates
+```
+
+```{r EMPI ~ PK_PATIENT_ID}
+rar_demo %>% group_by(EMPI) %>%
+  summarise(N=n_distinct(PK_PATIENT_ID)) %>%
+  filter(N != 1)
+```
+There are 4 EMPI's having more than 1 PK_PATIENT_ID
+```{r EMPI with more than 1 PK_PATIENT_ID}
+temp <- rar_demo %>% group_by(EMPI) %>%
+  summarise(N=n_distinct(PK_PATIENT_ID)) %>%
+  filter(N != 1)
+rar_demo %>% filter(EMPI %in% temp$EMPI) %>%
+  group_by(EMPI) %>%
+  arrange(EMPI, GENDER_MASTER_CODE, desc(RACE_MASTER_CODE)) %>%
+  filter(row_number() == n())
+
+tp <- rar_demo %>% group_by(EMPI) %>%
+  arrange(EMPI, GENDER_MASTER_CODE, desc(RACE_MASTER_CODE)) %>%
+  filter(row_number() == n())
+```
+In tp, EMPI and PK_PATIENT_ID are 1 to 1 match.
+
+
+## HERMANDA_RAR_PTS.csv
+```{r Read in RAR_PTS}
+rar_pts <- fread(file = "/data/raw_data/PA/HERMANDA_RAR_PTS.csv", header = TRUE, stringsAsFactors = FALSE)
+
+```
+
+
+
+## HERMANDA_RAR_PTS_DX.csv
+```{r Read in RAR_PTS_DX}
+rar_dx <- fread(file = "/data/raw_data/PA/HERMANDA_RAR_PTS_DX.csv", header = TRUE, stringsAsFactors = FALSE)
+```
+
+```{r check dups}
+sum(duplicated(rar_dx))
+
+source("../common_anal/ALDO_Dx_fxns.R")
+
+temp <- dup_dx_pk_YN(rar_dx)
+
+# Apply my function to remove dups in PK_ENCOUNTER_ID level
+# rar_dx <- dup_dx_pk_RM(rar_dx)
+# Got the ERROR: Mismatch CONNENT
+```
+No duplicated rows. But there are lots of duplicated Dx's in PK_ENCOUNTER_ID level.
+
+
+
+
+ICD 9 or ICD 10?
+```{r ICD9/10}
+table(rar_dx$CODE_STANDARD_NAME)
+```
+There are many Dx's without indicator for ICD.
+```{r no ICD indicator}
+rar_dx %>% filter(CODE_STANDARD_NAME == "") %>%
+  group_by(CODE) %>%
+  summarise(N=n()) %>%
+  print.data.frame()
+```
+They also do not have ICD CODE's. So remove them...
+
+
+```{r check Dx's/Unique}
+length(unique(rar_dx$CODE))
+length(unique(rar_dx$PK_DX_ID)) # Unique to this table
+```
+```{r DESCRIPTION?}
+rar_dx %>% filter(CODE %in% c("255.1", "255.11")) %>% 
+  group_by(CODE, DESCRIPTION) %>%
+  summarise(n())
+```
+Description are still like part of CODE.
+```{r DESCRIPTION and COMMENTS?}
+rar_dx %>% filter(CODE %in% c("255.1", "255.11")) %>% 
+  group_by(CODE, DESCRIPTION, COMMENTS) %>%
+  summarise(n())
+```
+
+
+```{r One ICD-10 "E26.02" is missing here}
+temp <- rar_dx %>% filter(CODE_STANDARD_NAME == "ICD-10" & (grepl("E26.0.", CODE) | CODE == "E26.9"))
+    
+temp <- rar_dx %>% filter(CODE_STANDARD_NAME == "ICD9" & CODE %in% c('255.10', '255.11', '255.1', '255.12')) %>% rbind(.,temp)
+    
+aldo_dx <- unique(temp$CODE)
+aldo_dx
+```
+
+
+
+HAR_NUMBER:
+```{r HAR_NUMBER missing}
+sum(is.na(rar_dx$HAR_NUMBER))
+```
+
+Almost half of ALDO Dx's has a missing HAR_NUMBER, so could not just remove them
+```{r HAR_NUMBER missing for ALDO}
+rar_dx %>% filter(CODE %in% aldo_dx) %>%
+  summarise(N=n())
+rar_dx %>% filter(CODE %in% aldo_dx & is.na(HAR_NUMBER)) %>%
+  summarise(N=n())
+```
+
+```{r Create HAR}
+rar_dx <- load_RAR_Dx()
+
+  
+ret <- tibble()
+  
+
+# get ALDO Dx's, in a higher level
+  
+# catch Hyperaldo in a higher level
+ret <- dat %>% filter(CODE_STANDARD_NAME == "ICD-10" & grepl("E26\\.*", CODE))
+     
+ret <- dat %>% filter(CODE_STANDARD_NAME == "ICD9" & grepl("255\\.1", CODE)) %>% rbind(.,ret)
+      
+aldo_dx <- unique(ret$CODE)
+nd <- length(unique(ret$CODE))
+    
+# get HTN Dx's, in a higher level
+
+ret <- dat %>% filter(CODE_STANDARD_NAME == "ICD-10" & grepl("I10|I15", CODE))
+    
+ret <- dat %>% filter(CODE_STANDARD_NAME == "ICD9" & grepl("401|405", CODE)) %>% rbind(.,ret)
+    
+
+ret$HAR <- ifelse(is.na(ret$HAR_NUMBER), 
+                        paste(ret$EMPI, format(ret$ENC_DATE, "%Y-%m-%d")),
+                        ret$HAR_NUMBER)
+
+```
+
+```{r For Each HAR, check dups in CODE}
+ret %>% group_by(HAR) %>% 
+  summarise(N=n_distinct(CODE)) %>%
+  filter(N != 1)
+```
+Take a look into those HAR with more than 1 CODE
+```{r HAR "1000902293 2003-09-26" "10001616218"}
+ret %>% filter(HAR == "1000902293 2003-09-26")
+ret %>% filter(HAR == "10001616218") %>% arrange(PRIMARY_YN)
+
+```
+So:
+(1) Pick PRIMARY_YN = TRUE, [first of desc(PRIMARY_YN)]
+(2) DX_SEQUENCE minimal [first of arrange(DX_SEQUENCE), NA will be last]
+(3) First of arrange(desc(SOURCE_LAST_UPDATE_DATE), desc(COMMENTS)) [This will avoid "" in COMMENTS]
+
+
+Question: For each HAR, are all Dx's on the same day?
+```{r HAR with multiple Dates}
+ret %>% group_by(HAR) %>%
+  summarise(N = n_distinct(format(ENC_DATE, "%Y-%m-%d"))) %>%
+  filter(N != 1)
+
+```
+There are 29 HAR's which have Dx's in different days.
+
+
+
+## HERMANDA_RAR_PTS_ENC.csv
+```{r Read in RAR_PTS_ENC}
+rar_enc <- fread(file = "/data/raw_data/PA/HERMANDA_RAR_PTS_ENC.csv", header = TRUE, stringsAsFactors = FALSE)
+```
+
+```{r Check dups}
+sum(duplicated(rar_enc))
+```
+No dups.
+
+
+## HERMANDA_RARV3.csv
+```{r Read in RAR_PTS_ENC}
+rar <- fread(file = "/data/raw_data/PA/HERMANDA_RARV3.csv", header = TRUE, stringsAsFactors = FALSE)
+```
+```{r Check dups}
+sum(duplicated(rar))
+```
+No dups.
+
+
+
+## HERMANDA_RAR_PTS_LABS.csv
+```{r Read in RAR_PTS_LABS}
+rar_lab <- fread(file = "/data/raw_data/PA/HERMANDA_RAR_PTS_LABS.csv", header = TRUE, stringsAsFactors = FALSE)
+```
+```{r  Dups}
+sum(duplicated(rar_lab))
+```
+No dups.
+
+```{r RESULT STATUS}
+rar_lab %>% group_by(RESULT_STATUS) %>%
+  summarise(N = n()) %>% 
+  arrange(desc(N))
+```
+There are several Result Status besides of "Final".
+
+
+Now take a subset of "Final" from RESULT_STATUS:
+```{r subset RESULT_STATUS == "Final"}
+rar_lab %<>% filter(RESULT_STATUS == "Final")
+```
+
+
+```{r Whats Left in Labs}
+rar_lab %>% group_by(RESULT_ITEM_CODE) %>%
+  summarise(N = n()) %>% 
+  print.data.frame()
+
+# catch "ALDO"|"RENIN"
+rar_lab %>% filter(grepl("renin|aldo", tolower(RESULT_ITEM_CODE))) %>%
+  group_by(ORDER_NAME,RESULT_ITEM_CODE) %>%
+  summarise(N = n()) %>%
+  print.data.frame()
+
+
+temp <- rar_lab %>% filter(grepl("renin|aldo", tolower(RESULT_ITEM_CODE))) %>%
+  group_by(ORDER_ITEM_CODE, RESULT_ITEM_CODE)
+
+
+
+
+table(temp$ORDER_ITEM_CODE)
+```
+
+
+
+
+

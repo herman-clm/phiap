@@ -1,0 +1,41 @@
+---
+title: "RAR Data"
+output: html_document
+---
+
+```{r setup, include=FALSE, echo=FALSE, cache=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(data.table)
+library(tibble)
+setwd("~/repos/Daniel_Herman_Aldosterone_2017_03/code/R/PA_analysis")
+```
+
+
+## HERMANDA_RAR_PTS_DX.csv
+Read in raw data. Pick 15 Dx's
+```{r RAR Dx}
+source("../common_anal/RAR_fxns.R")
+rar_dx <- load_RAR_Dx()
+rar_dx <- sub_RAR_dx(dat=rar_dx, ALDO.Dx = TRUE, n.Dx = 0)
+
+```
+
+
+## HERMANDA_RAR_PTS_LABS.csv
+Read in raw data.
+```{r RAR Labs}
+rar_lab <- load_RAR_Lab()
+
+```
+
+
+## HERMANDA_RAR_PTS_ENC.csv
+Read in raw data.
+```{r RAR Enc}
+rar_enc <- load_RAR_enc(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_ENC.csv", bp_only = TRUE)
+
+```
+
+
+

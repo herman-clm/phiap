@@ -195,5 +195,20 @@ dup_dx_pk_YN(dx_1)$res
  Now, we end up with a PK_ENCOUNTER_ID leve Dx data.
 
 
+```{r Use functions to to the cleaning from the beginning}
+rm(list=ls())
+
+library(dplyr)
+library(data.table)
+library(tibble)
+setwd("~/repos/Daniel_Herman_Aldosterone_2017_03/code/R/PA_analysis")
+
+source("../common_anal/ALDO_Dx_fxns.R")
+
+dx <- prep_aldo_dx()
+dx <- agg_dx_pk_enc(dx)
+
+
+```
 
 

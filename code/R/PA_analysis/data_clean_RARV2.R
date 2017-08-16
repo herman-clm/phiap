@@ -12,7 +12,7 @@ source("pre_RARV2.R")
 res1 <- pre_rar("/data/raw_data/PA/HERMANDA_RARV2.csv")
   
   
-# Start funciton hear
+# Start funciton here
 ## (0)  Exclude ORDER_ITEM_CODE that are for AVS or urine specimens
 res1 <- res1[!(ORDER_ITEM_CODE %in% c("C9009900", "C9009995", "C9009997", "Q19573", "83497A"))]
 

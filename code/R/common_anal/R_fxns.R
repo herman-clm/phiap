@@ -132,3 +132,31 @@ deidentify <- function(dat, id_cols=c(), dt_cols=c(), drop_cols=c()) {
   }
   tmp
 }
+
+id_date <- function(dat, hold_id = NA, hold_date = NA){
+  #' This is the function used to change ID's into character, and Dates to DATETIME
+  #' @param dat data.table very raw data after reading in from csv through fread
+  #' @param hold_id character vector Names for ID that will not be changed into character
+  #' @param hold_date character vector Names for Date that will not be changed into DATETIME
+  #' @return dat tibble Returned data
+
+  col_name <- names(dat)
+  
+  dat <- as.tibble(dat)
+  
+  # Change ID's to character
+  to_char <- col_name %in% setdiff(c("EMPI", "PK_ENCOUNTER_ID", "HAR_NUMBER", "PK_ORDER_ID","PK_ORDER_RESULT_ID", "PK_DX_ID", "PK_PATIENT_ID"), hold_id)
+  
+  dat[,to_char] <- lapply(dat[,to_char], as.character)
+  
+  
+  # Change DATE from character into DATETIME
+  # Note: This changing to DATETIME only works for format "%Y-%m-%d %H:%M:%S"
+  
+  to_date <- col_name %in% setdiff(c("ENC_DATE", "E_SOURCE_LAST_UPDATE", "CODING_DATE", "SOURCE_LAST_UPDATE_DATE", "ORDER_START_DATE", "O_SOURCE_LAST_UPDATE", "RESULT_DATE", "BIRTH_DATE"), hold_date)
+  
+  dat[,to_date] <- lapply(dat[,to_date], function(x) as.POSIXct(x,format = "%Y-%m-%d %H:%M:%S"))
+  
+  
+  return(dat)
+}
