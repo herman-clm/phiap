@@ -5,12 +5,14 @@ library(dplyr)
 library(data.table)
 library(tibble)
 source("../common_anal/R_fxns.R")
-source("pre_RARV2.R")
+source("../common_anal/RAR_fxns.R")
 
 # read in raw data, and make some pre-process
 
-res1 <- pre_rar("/data/raw_data/PA/HERMANDA_RARV2.csv")
+res1 <- load_RAR_v3("/data/raw_data/PA/HERMANDA_RARV2.csv")
   
+
+
   
 # Start funciton here
 ## (0)  Exclude ORDER_ITEM_CODE that are for AVS or urine specimens
@@ -48,7 +50,7 @@ c71[ORDER_GROUP != "Historical Order" &
 c71[ORDER_GROUP != "Historical Order" & 
       RESULT_RESOURCE ==  "QUEST" & 
       RESULT_ITEM_CODE != "PLASMA RENIN ACTIVITY, LC/MS/MS",
-    c("Lab","Test","Method") := list("unknown", "Renin","unknown")]
+    c("Lab","Test","Method") := list("unknown", "Renin Activity","unknown")]
 
 
 c71[ORDER_GROUP != "Historical Order" & 

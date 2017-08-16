@@ -145,7 +145,7 @@ id_date <- function(dat, hold_id = NA, hold_date = NA){
   dat <- as.tibble(dat)
   
   # Change ID's to character
-  to_char <- col_name %in% setdiff(c("EMPI", "PK_ENCOUNTER_ID", "HAR_NUMBER", "PK_ORDER_ID","PK_ORDER_RESULT_ID", "PK_DX_ID", "PK_PATIENT_ID"), hold_id)
+  to_char <- col_name %in% setdiff(c("EMPI", "PK_ENCOUNTER_ID", "HAR_NUMBER", "PK_ORDER_ID","PK_ORDER_RESULT_ID", "PK_DX_ID", "PK_PATIENT_ID", "MRN", "PK_ORDER_PERFORMED_ID"), hold_id)
   
   dat[,to_char] <- lapply(dat[,to_char], as.character)
   
@@ -153,7 +153,7 @@ id_date <- function(dat, hold_id = NA, hold_date = NA){
   # Change DATE from character into DATETIME
   # Note: This changing to DATETIME only works for format "%Y-%m-%d %H:%M:%S"
   
-  to_date <- col_name %in% setdiff(c("ENC_DATE", "E_SOURCE_LAST_UPDATE", "CODING_DATE", "SOURCE_LAST_UPDATE_DATE", "ORDER_START_DATE", "O_SOURCE_LAST_UPDATE", "RESULT_DATE", "BIRTH_DATE"), hold_date)
+  to_date <- col_name %in% setdiff(c("ENC_DATE", "E_SOURCE_LAST_UPDATE", "CODING_DATE", "SOURCE_LAST_UPDATE_DATE", "ORDER_START_DATE", "O_SOURCE_LAST_UPDATE", "RESULT_DATE", "BIRTH_DATE", "ORDER_DATE", "PERFORMED_DATE"), hold_date)
   
   dat[,to_date] <- lapply(dat[,to_date], function(x) as.POSIXct(x,format = "%Y-%m-%d %H:%M:%S"))
   

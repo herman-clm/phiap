@@ -6,11 +6,13 @@ output: html_document
 ## HERMANDA_RAR_PTS_DEMO.csv
 ```{r setup, include=FALSE, echo=FALSE, cache=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(cache = TRUE)
 library(dplyr)
 library(data.table)
 library(tibble)
+library(tidyr)
 setwd("~/repos/Daniel_Herman_Aldosterone_2017_03/code/R/PA_analysis")
-
+source("../common_anal/RAR_fxns.R")
 ```
 
 Read in patients' demographis info, HERMANDA_RAR_PTS_DEMO.csv
@@ -18,7 +20,7 @@ Read in patients' demographis info, HERMANDA_RAR_PTS_DEMO.csv
 rar_demo <- fread(file = "/data/raw_data/PA/HERMANDA_RAR_PTS_DEMO.csv", header = TRUE, stringsAsFactors = FALSE)
 ```
 
-```{r Clean a little}
+```{r Clean a little, dependson=c("load in data")}
 rar_demo <- id_date(rar_demo)
 
 sum(duplicated(rar_demo)) # no duplicates
@@ -201,7 +203,9 @@ No dups.
 
 ## HERMANDA_RARV3.csv
 ```{r Read in RAR_PTS_ENC}
-rar <- fread(file = "/data/raw_data/PA/HERMANDA_RARV3.csv", header = TRUE, stringsAsFactors = FALSE)
+rar <- load_RAR_v3()
+
+
 ```
 ```{r Check dups}
 sum(duplicated(rar))
@@ -214,6 +218,7 @@ No dups.
 ```{r Read in RAR_PTS_LABS}
 rar_lab <- fread(file = "/data/raw_data/PA/HERMANDA_RAR_PTS_LABS.csv", header = TRUE, stringsAsFactors = FALSE)
 ```
+
 ```{r  Dups}
 sum(duplicated(rar_lab))
 ```
@@ -225,7 +230,7 @@ rar_lab %>% group_by(RESULT_STATUS) %>%
   arrange(desc(N))
 ```
 There are several Result Status besides of "Final".
-
+TODO: Validate "Final"s are good to use
 
 Now take a subset of "Final" from RESULT_STATUS:
 ```{r subset RESULT_STATUS == "Final"}
@@ -237,7 +242,9 @@ rar_lab %<>% filter(RESULT_STATUS == "Final")
 rar_lab %>% group_by(RESULT_ITEM_CODE) %>%
   summarise(N = n()) %>% 
   print.data.frame()
+```
 
+```{r Catch "ALDO|RENIN"}
 # catch "ALDO"|"RENIN"
 rar_lab %>% filter(grepl("renin|aldo", tolower(RESULT_ITEM_CODE))) %>%
   group_by(ORDER_NAME,RESULT_ITEM_CODE) %>%
@@ -245,16 +252,249 @@ rar_lab %>% filter(grepl("renin|aldo", tolower(RESULT_ITEM_CODE))) %>%
   print.data.frame()
 
 
-temp <- rar_lab %>% filter(grepl("renin|aldo", tolower(RESULT_ITEM_CODE))) %>%
+rar_lab_ra <-  rar_lab %>% filter(grepl("renin|aldo", tolower(RESULT_ITEM_CODE))) %>%
   group_by(ORDER_ITEM_CODE, RESULT_ITEM_CODE)
 
 
 
+```
 
-table(temp$ORDER_ITEM_CODE)
+Exclude some AVS or urine specimens
+```{r Exclude ORDER_ITEM_CODE that are for AVS or urine specimens}
+rar_lab_ra %<>% filter(!(ORDER_ITEM_CODE %in%  c("C9009900", "C9009995", "C9009997", "Q19573", "83497A")))
+
+rar_lab_ra$RESULT_VALUE <- numericize(rar_lab_ra$RESULT_VALUE, adjust_up = 1.5, adjust_down = 0.5)
+
+
+table(rar_lab_ra$ORDER_ITEM_CODE)
+```
+
+```{r Check ORDER ~ RESULT}
+rar_lab_ra %>% group_by(ORDER_ITEM_CODE, ORDER_NAME, RESULT_ITEM_CODE) %>%
+  summarise(N=n())
+
+rar_lab_ra %>% group_by(RESULT_ITEM_CODE, ORDER_ITEM_CODE) %>%
+  summarise(N=n())
+
+
+rar_lab_ra %>% group_by(RESULT_ITEM_CODE) %>%
+  summarise(N=n())
+
+rar_lab_ra %>% group_by(RESULT_ITEM_CODE, tolower(UNIT_OF_MEASURE)) %>%
+  summarise(N=n())
+```
+
+```{r Modify Based on RESULT_ITEM_CODE}
+ret <- as.tibble()
+
+# dropped many rows here
+ret <- rar_lab_ra %>% 
+  filter(RESULT_ITEM_CODE %in% c("RENIN ACTIVITY","RENIN", "PLASMA RENIN ACTIVITY, LC/MS/MS", "PLASMA RENIN ACTIVITY")) %>%
+    mutate(Test = "PRA")
+
+
+ret <- rar_lab_ra %>% 
+  filter(RESULT_ITEM_CODE %in% c("DIRECT RENIN")) %>% 
+  mutate(Test = "DRC") %>%
+  rbind(., ret)
+
+ret <- rar_lab_ra %>% 
+  filter(RESULT_ITEM_CODE %in% c("ALDOSTERONE, SERUM", "ALDOSTERONE, LC/MS/MS", "ALDOSTERONE")) %>%
+  mutate(Test = "Aldo") %>%
+  rbind(., ret)
+
+table(ret$Test)
+```
+
+Collapse
+```{r HAR on Labs}
+ret <- id_date(ret)
+# Create HAR
+ret$HAR <- ifelse(is.na(ret$HAR_NUMBER), 
+                        paste(ret$EMPI, format(ret$ENC_DATE, "%Y-%m-%d")),
+                        ret$HAR_NUMBER)
+
+
+```
+
+```{r Pair Test Results}
+sum(duplicated(ret$PK_ORDER_ID))
+sum(duplicated(ret$HAR))
+
+ret %>% group_by(HAR) %>%
+  summarise(N = n()) %>%
+  filter(N > 2) %>%
+  arrange(desc(N))
+
+```
+
+HOW TO FIND ALDO ~ RENIN pairs???
+```{r Try pair}
+aldo <- ret %>% filter(Test == "Aldo")
+renin <- ret %>% filter(Test == "DRC" | Test == "PRA")
+
+length(unique(intersect(aldo$HAR, renin$HAR))) # 6790
+
+
+
+
+# Each PK_ORDER_ID only contain one ENC_DATE
+ret %>% group_by(PK_ORDER_ID) %>%
+  summarise(N = n_distinct(ENC_DATE)) %>%
+  filter(N != 1)
+# returns 0
+
+# Each patient could have multiple Lab Tests ordered in one day
+ret %>% group_by(EMPI, ENC_DATE, Test) %>%
+  summarise(N = n_distinct(PK_ORDER_ID)) %>%
+  filter(N != 1)
+# returns 315 rows
+# TODO: filter out saline suppression tests, AVS, ...
+
+
+# Each HAR could have multiple Lab Test Orders
+ret %>% 
+  group_by(HAR, Test) %>%
+  summarise(N = n_distinct(PK_ORDER_ID)) %>%
+  filter(N != 1)
+#316
+```
+
+```{r Group by HAR + PK_ORDER_ID, then take the mean for multiples}
+# drop a few columns
+aldo %<>% 
+  select(EMPI, PK_ENCOUNTER_ID, ENC_DATE, HAR_NUMBER, HAR, PK_ORDER_ID, ORDER_ITEM_CODE, RESULT_STATUS, RESULT_ITEM_CODE, Test, RESULT_VALUE, UNIT_OF_MEASURE) %>%
+  mutate(Aldo = RESULT_VALUE) %>%
+  select(-c(Test, RESULT_VALUE, UNIT_OF_MEASURE))
+
+renin %<>% 
+  select(EMPI, PK_ENCOUNTER_ID, ENC_DATE, HAR_NUMBER, HAR, PK_ORDER_ID, ORDER_ITEM_CODE, RESULT_STATUS, RESULT_ITEM_CODE, Test, RESULT_VALUE, UNIT_OF_MEASURE) %>%
+  mutate(PRA = ifelse(Test == "PRA", RESULT_VALUE, NA), DRC = ifelse(Test == "DRC", RESULT_VALUE, NA)) %>%
+  select(-c(Test, RESULT_VALUE, UNIT_OF_MEASURE))
+
+# aggregate in PK_ORDER_ID
+## For same PK_ORDER_ID, they will have same ENC_DATE
+aldo %<>% 
+  group_by(EMPI, HAR, ENC_DATE, PK_ORDER_ID) %>%
+  summarise(Aldo = mean(Aldo, na.rm = TRUE))
+
+renin %<>% 
+  group_by(HAR, EMPI, PK_ORDER_ID, ENC_DATE) %>%
+  summarise(PRA = mean(PRA, na.rm = TRUE), 
+            DRC = mean(DRC, na.rm=TRUE))
+
 ```
 
 
+```{r collapse_levels}
+
+tmp <- ret %>%
+  ungroup() %>%
+          select(EMPI, PK_ENCOUNTER_ID, ENC_DATE, HAR, PK_ORDER_ID, Test, RESULT_VALUE, RESULT_DATE, O_SOURCE_LAST_UPDATE, ORDER_START_DATE)
+tmp %>% summarize(N_rows = n(), N_distinct_enc = n_distinct(EMPI, PK_ENCOUNTER_ID), N_distinct_collects = n_distinct(EMPI, ORDER_START_DATE), N_distinct_HAR = n_distinct(HAR))
+
+# Summarize at PK_ORDER_ID (QC) (--> PK_ORDER_ID level)
+# TODO: make sure we are picking the best result
+tmp %<>%
+  group_by(EMPI, PK_ENCOUNTER_ID, ENC_DATE, HAR, PK_ORDER_ID, Test) %>%
+  arrange(desc(RESULT_DATE), desc(O_SOURCE_LAST_UPDATE)) %>%
+  slice(1) %>% ungroup()
+tmp %>% summarize(N_rows = n(), N_distinct_enc = n_distinct(EMPI, PK_ENCOUNTER_ID), N_distinct_collects = n_distinct(EMPI, ORDER_START_DATE), N_distinct_HAR = n_distinct(HAR))
+
+# -> ret at unique PK_ORDER_ID level
+
+# # Exploring multiple test per ENCOUNTER scenarios
+# tmp %>%
+#   group_by(EMPI, PK_ENCOUNTER_ID, Test) %>%
+#   filter(n() > 1) %>%
+#   mutate(N=row_number()) %>%
+#   ungroup() %>%
+#   arrange(EMPI, PK_ENCOUNTER_ID, Test, N)
+
+# Summarize at Collect Time (--> EMPI + ORDER_START_DATE level)
+# TODO: make sure we are picking the best result
+tmp %<>%
+  group_by(EMPI, PK_ENCOUNTER_ID, ENC_DATE, HAR, ORDER_START_DATE, Test) %>%
+  arrange(desc(RESULT_DATE), desc(O_SOURCE_LAST_UPDATE)) %>%
+  slice(1) %>%
+  ungroup()
+tmp %>% summarize(N_rows = n(), N_distinct_enc = n_distinct(EMPI, PK_ENCOUNTER_ID), N_distinct_collects = n_distinct(EMPI, ORDER_START_DATE), N_distinct_HAR = n_distinct(HAR))
+
+# Pair based on Collect Time
+tmp %<>%
+  select(EMPI, PK_ENCOUNTER_ID, ENC_DATE, HAR, ORDER_START_DATE, Test, RESULT_VALUE) %>%
+  group_by(EMPI, PK_ENCOUNTER_ID, ENC_DATE, HAR, ORDER_START_DATE) %>%
+  spread(key = Test, value=RESULT_VALUE) %>% ungroup()
+tmp %>% summarize(N_rows = n(), N_distinct_enc = n_distinct(EMPI, PK_ENCOUNTER_ID), N_distinct_collects = n_distinct(EMPI, ORDER_START_DATE), N_distinct_HAR = n_distinct(HAR))
+
+# Could join back to get more columns
+
+# Exploring multiple test per ENCOUNTER scenarios
+tmp %>%
+  group_by(EMPI, PK_ENCOUNTER_ID) %>%
+  filter(n() > 1) %>%
+  mutate(N=row_number()) %>%
+  ungroup() %>%
+  arrange(EMPI, PK_ENCOUNTER_ID, N)
+
+# Merge if collect within 30 minutes
+tmp_merged_2 <- tmp %>%
+  group_by(EMPI, PK_ENCOUNTER_ID, ENC_DATE, HAR) %>%
+  filter(n() == 2,
+         abs(ORDER_START_DATE[1] - ORDER_START_DATE[2]) < 60*30) %>%  # merge if within 30 minutes 
+  mutate_at(vars(Aldo:DRC), funs(na.omit(.)[1])) %>%
+  slice(1) %>% ungroup()
+
+# Take first row if 2 rows (far apart in time) or >2 rows
+tmp_merged_multi <- tmp %>%
+  group_by(EMPI, PK_ENCOUNTER_ID, ENC_DATE, HAR) %>%
+  filter((n() == 2 & abs(ORDER_START_DATE[1] - ORDER_START_DATE[2]) >= 60*30) |
+           n() > 2) %>%  # merge if within 30 minutes 
+  arrange(ORDER_START_DATE) %>%
+  slice(1) %>% ungroup()
+
+# Combine with single row data (--> PK_ENCOUNTER_ID level)
+tmp %<>%
+  group_by(EMPI, PK_ENCOUNTER_ID, ENC_DATE, HAR) %>%
+  filter(n() == 1) %>%
+  ungroup() %>%
+  bind_rows(tmp_merged_2) %>%
+  bind_rows(tmp_merged_multi)
+tmp %>% summarize(N_rows = n(), N_distinct_enc = n_distinct(EMPI, PK_ENCOUNTER_ID), N_distinct_collects = n_distinct(EMPI, ORDER_START_DATE), N_distinct_HAR = n_distinct(HAR))
+
+# Collect at the HAR level
+# TODO: REsolve the collect times at 00:00:00 (Get Inlab or received ttime to help)
+
+# dates are same and one of each -> merge
+# dates are same and more than one of one of them, drop
+# dates are different, pick first one
+
+
+temp <- tmp %>% group_by(HAR) %>%
+  summarise(N=n()) %>%
+  filter(N != 1)
+
+View(tmp %>% filter(HAR %in% temp$HAR))
+
+```
+
+```{r Then pair by PK_ORDER_ID}
+ret_pair <- merge(aldo, 
+                  renin,
+                  all =T, 
+                  by = "HAR")
+
+# QC
+nrow(renin)
+nrow(aldo)
+nrow(ret_pair)
+
+temp <- sqldf("SELECT *
+          FROM aldo, renin
+          WHERE aldo.PK_ORDER_ID = renin.PK_ORDER_ID")
+
+# 932 unique HAR here
+```
 
 
 

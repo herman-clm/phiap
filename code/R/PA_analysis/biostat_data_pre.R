@@ -32,6 +32,8 @@ rar_demo <- load_RAR_PtDemo()
 ## HERMANDA_RAR_PTS_LABS.csv
 
 
+## HERMANDA_RARV3.csv
+rar <- load_RAR_v3()
 
 
 
