@@ -377,19 +377,17 @@ prep_RAR_renin <- function(res1, others) {
 
 
 
-load_RAR_enc <- function(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_ENC.csv", bp_only = FALSE, HAR_Level = TRUE, outpatient_only = TRUE){
+load_RAR_enc <- function(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_ENC.csv", bp_only = FALSE, EMPI_DATE_Level = TRUE, outpatient_only = TRUE){
   #' Load in the RAR Encounter data, and do some basic cleaning
   #' @param dat_file string Raw data text file location 
   #' @param bp_only logic If TRUE, only keep BP's, excluding all other detailed info. Default is FALSE
-  #' @param HAR_Level logic If TRUE, collapse into HAR Level. Default is TRUE
+  #' @param EMPI_DATE_Level logic If TRUE, collapse into EMPI_DATE Level. Default is TRUE
   #' @param outpatient_only logic If TRUE, only include Outpatients. Default is TRUE
   #' @return rar_enc tibble pre-processed RAR Dx data
   
   # read in raw data file
   rar_enc <- fread(dat_file, header = TRUE, stringsAsFactors = FALSE)
   
-  # Modify ID's and DateTime
-  rar_enc <- id_date(rar_enc)
   
   if(outpatient_only){
     rar_enc %<>% filter(PATIENT_MASTER_CLASS == "OUTPATIENT")
@@ -398,25 +396,30 @@ load_RAR_enc <- function(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_ENC.csv"
   
   if(bp_only){
     # only keep BP's
-    rar_enc %<>% filter(!(is.na(BP_SYSTOLIC) | is.na(BP_DIASTOLIC))) %>%
-      select(EMPI, PK_ENCOUNTER_ID, ENC_DATE, E_SOURCE_LAST_UPDATE, HAR_NUMBER, 
+    rar_enc %<>% select(EMPI, PK_ENCOUNTER_ID, ENC_DATE, E_SOURCE_LAST_UPDATE, 
              BP_SYSTOLIC, BP_DIASTOLIC)
   }
   
-  
+  # Modify ID's and DateTime
+  rar_enc <- id_date(rar_enc)
   
   # Create new HAR: HAR_NUMBER or EMPI + ENC Date
-  rar_enc$HAR <- ifelse(is.na(rar_enc$HAR_NUMBER), 
-                        paste(rar_enc$EMPI, format(rar_enc$ENC_DATE, "%Y-%m-%d")),
-                        rar_enc$HAR_NUMBER)
+  # rar_enc$HAR <- ifelse(is.na(rar_enc$HAR_NUMBER), 
+  #                       paste(rar_enc$EMPI, format(rar_enc$ENC_DATE, "%Y-%m-%d")),
+  #                       rar_enc$HAR_NUMBER)
   
-  if(HAR_Level){
+  # Create new ENC ID: EMPI_DATE
+  rar_enc$EMPI_DATE <- paste(rar_enc$EMPI, format(rar_enc$ENC_DATE, "%Y-%m-%d"))
+  
+  
+  if(EMPI_DATE_Level){
     # collapse into HAR_NUMBER Level
-    ##  For duplicated HAR, use the latest E_SOURCE_LAST_UPDATE
-    ##  TODO: Instead of using first record, use the median one
-    rar_enc %<>% group_by(HAR) %>%
+    ##  For duplicated EMPI_DATE, use the Median E_SOURCE_LAST_UPDATE
+    rar_enc %<>% group_by(EMPI_DATE) %>%
       arrange(desc(E_SOURCE_LAST_UPDATE)) %>%
-      filter(row_number() == 1)
+      mutate_at(vars(BP_SYSTOLIC:BP_DIASTOLIC), funs(median(., na.rm = FALSE))) %>%
+      slice(1) %>%
+      ungroup()
     
   }
   
@@ -453,13 +456,13 @@ load_RAR_Dx <- function(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_DX.csv"){
   
 }
 
-sub_RAR_dx <- function(dat, ALDO.Dx = TRUE, HTN.Dx = TRUE, n.Dx = 10, HAR_Level = TRUE, outpatient_only = TRUE){
+sub_RAR_dx <- function(dat, ALDO.Dx = TRUE, HTN.Dx = TRUE, n.Dx = 10, EMPI_DATE_Level = TRUE, outpatient_only = TRUE){
   #' Getting the proper subset for Dx data
   #' @param dat tibble Pre-processed RAR Dx data
   #' @param ALDO.Dx logit Whether to include ALDO Dx's. Default is TRUE
   #' @param HTN.Dx logit Whether to include hypertension Dx's. Default is TRUE
   #' @param n.Dx numeric Number of total Dx's included, ALDO/HTN excluded. Default is 10
-  #' @param HAR_Level logit If TRUE, collapse data into HAR Level. Default is TRUE
+  #' @param EMPI_DATE_Level logit If TRUE, collapse data into EMPI_DATE Level. Default is TRUE
   #' @param outpatient_only logit If TRUE, only include Outpatients. Default is TRUE.
   #' @return ret tibble The subset of cleaned Dx data
   
@@ -501,23 +504,27 @@ sub_RAR_dx <- function(dat, ALDO.Dx = TRUE, HTN.Dx = TRUE, n.Dx = 10, HAR_Level 
   
   
   # Create new HAR: HAR_NUMBER or EMPI + ENC Date
-  ret$HAR <- ifelse(is.na(ret$HAR_NUMBER), 
-                        paste(ret$EMPI, format(ret$ENC_DATE, "%Y-%m-%d")),
-                        ret$HAR_NUMBER)
+  # ret$HAR <- ifelse(is.na(ret$HAR_NUMBER), 
+  #                       paste(ret$EMPI, format(ret$ENC_DATE, "%Y-%m-%d")),
+  #                       ret$HAR_NUMBER)
+  
+  # Create new ENC ID: EMPI_DATE
+  ret$EMPI_DATE <- paste(ret$EMPI, format(ret$ENC_DATE, "%Y-%m-%d"))
   
   
-  if(HAR_Level){
-    # collapse into HAR_NUMBER Level
-    ##  For duplicated HAR, use the latest SOURCE_LAST_UPDATE, if same:
+  
+  if(EMPI_DATE_Level){
+    # collapse into EMPI_DATE Level
+    ##  For duplicated CODE in EMPI_DATE level, use the latest SOURCE_LAST_UPDATE, if same:
     ## (1) Pick PRIMARY_YN = TRUE, [first of desc(PRIMARY_YN), NA will always be the last]
     ## (2) DX_SEQUENCE minimal [first of arrange(DX_SEQUENCE), NA will be last]
     ## (3) First of arrange(desc(SOURCE_LAST_UPDATE_DATE), desc(COMMENTS)) [This will avoid "" in COMMENTS]
     
     ret %<>% 
-      group_by(HAR) %>%
+      group_by(EMPI_DATE, CODE) %>%
       arrange(desc(SOURCE_LAST_UPDATE_DATE), 
-              desc(PRIMARY_YN), DX_SEQUENCE, desc(COMMENTS)) %>% # Pick a single code (for now)
-      filter(row_number() == 1)
+              desc(PRIMARY_YN), DX_SEQUENCE, desc(COMMENTS)) %>% # Pick Unique CODE for each EMPI_DATE (for now)
+      slice(1)
     
     
 
@@ -552,7 +559,7 @@ load_RAR_PtDemo <- function(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_DEMO.
   
   
   # Factorize
-  rar_demo$GENDER._MASTER_CODE <- factor(rar_demo$GENDER_MASTER_CODE, levels = c("F","M"))
+  rar_demo$GENDER_MASTER_CODE <- factor(rar_demo$GENDER_MASTER_CODE, levels = c("F","M"))
   # All other will be NA, like UNKNOWN
   rar_demo$RACE_MASTER_CODE <- factor(rar_demo$RACE_MASTER_CODE, levels = c("BLACK", "WHITE","OTHER","AM IND AK NATIVE", "ASIAN", "HI PAC ISLAND", "MIXED"))
   
@@ -563,11 +570,9 @@ load_RAR_PtDemo <- function(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_DEMO.
 
 
 
-load_RAR_Lab <- function(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_LABS.csv", Result_Status = "Final", potassium = FALSE, adjust_up = 1.5, adjust_down = 0.5){
-  #' Load in the RAR Lab data, and do some basic cleaning
+load_Lab <- function(dat_file,  potassium = FALSE, adjust_up = 1.5, adjust_down = 0.5){
+  #' Load in the Lab data, and do some basic cleaning. Lab data includes RAR_Lab and RAR_V3
   #' @param dat_file string Raw data text file location 
-  #' @param Result_Status string If "Final", then only include RESULT_STATUS = "Final"
-  #' Otherwise, include all labs.
   #' @param adjust_up numeric Rate for adjusting "> X", default is 0.5
   #' @param adjust_donw numeric Rate for adjusting "< X", default is 1.5
   #' @param potassium logit If TRUE, potassium lab results will be included. Default is FALSE
@@ -579,11 +584,6 @@ load_RAR_Lab <- function(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_LABS.csv
   rar_lab <- fread(file = dat_file, header = TRUE, stringsAsFactors = FALSE)
   
   
-  # Whether to select only "Final"
-  if(Result_Status == "Final"){
-    rar_lab <- rar_lab[RESULT_STATUS == "Final"]
-  }
-  # TODO: If not "Final", or Result_Status is a vector, should modify
   
   
   # Modify ID and DateTime
@@ -600,51 +600,225 @@ load_RAR_Lab <- function(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_LABS.csv
 
 
 
-## load_RAR_specific and pre_rar are very similar. Need to be cleaned out
-load_RAR_v3 <- function(dat_file_in="/data/raw_data/PA/HERMANDA_RARV3.csv",
-                    blood_only=FALSE, adjust_up = 1.5, adjust_down = 0.5){
-  #' This is a pre-process function, used to read in raw laboratory data for renin and aldosterone testing, and to make some changes in date, adding provider field, including useful ORDER ITEM CODE groups
-  #' @param dat_file_in string Raw data text file location
-  #' @param blood_only Boolean If true, only use serum/plasma test codes
-  #' @return res1 data.table pre-processed test results 
-  
-  res1 <- fread(dat_file_in, stringsAsFactors = FALSE, header = TRUE)
-  
-  # Modify ID and DateTime
-  res1 <- id_date(res1)
-  
-  # TODO  Add handling of RESULT_STATUS
-  
-  
-  # # Create provider field that defaults to ORDERING_PROV, and if empty ADMITTING_PROV
-  # res1$prov <- res1$ORDERING_PROV
-  # res1$prov[which(res1$prov=="")] <- res1$ADMITTING_PROV[which(res1$prov=="")]  
-  # 
 
-  # Handle non-numeric Results (Convert less than strings to LRR * 0.5)
-  # NOT Perfect Solution
-  res1$RESULT_VALUE <- numericize(res1$RESULT_VALUE, adjust_down = adjust_down, adjust_up = adjust_up)
+clean_RAR_Lab <- function(dat, Result_Status = "Final", RAR_only = TRUE, EMPI_DATE_Level = TRUE){
+  #' Load in the RAR Lab data, and do some basic cleaning
+  #' @param dat tibble Pre-cleaned RAR data 
+  #' @param Result_Status string If "Final", then only include RESULT_STATUS = "Final"
+  #' Otherwise, include all labs.
+  #' @param RAR_only logit If TRUE, will only return Aldo/Renin results
+  #' @param EMPI_DATE_Level logit If TRUE, collapse data into EMPI_DATE Level. Default is TRUE
+  #' @return ret tibble pre-processed RAR Dx data
   
-  # TODO: Add warning if duplicates?????  
-  # res1 %<>%
-  #   filter(!duplicated(res1))
-  # warning("TODO: Duplicated rows in pre_rar input: need to explain")
   
-  # Test (What is duplicated -- handle?)
-  # assert_that(nrow(res1) == nrow(res1 %>% distinct))
+  # Whether to select only "Final"
+  if(Result_Status == "Final"){
+    dat <- dat %>% filter(RESULT_STATUS == "Final")
+  }
+  # TODO: If not "Final", or Result_Status is a vector, should modify
   
-  if (blood_only) { # Exclude ORDER_ITEM_CODE that are for AVS or urine specimens
-    res1 <- res1[!(ORDER_ITEM_CODE %in% c("C9009900", "C9009995", "C9009997", "Q19573", "83497A"))]
+  
+  # Duplicates
+  if(sum(duplicated(dat))){
+    warning("TODO: Duplicated rows in pre_rar input: need to explain")
   }
   
-  return(res1)
+  dat %<>%
+    filter(!duplicated(dat))
+  
+  
+  if(RAR_only){
+    # catch "ALDO"|"RENIN"
+    dat %<>% filter(grepl("renin|aldo", tolower(RESULT_ITEM_CODE))) %>%
+      group_by(ORDER_ITEM_CODE, RESULT_ITEM_CODE)
+    
+    # Exclude ORDER_ITEM_CODE that are for AVS or urine specimens
+    dat %<>% filter(!(ORDER_ITEM_CODE %in%  c("C9009900", "C9009995", "C9009997", "Q19573", "83497A")))
+    
+    # Create ret table
+    ret <- as.tibble()
+    ## dropped many rows here
+    ret <- dat %>% 
+      filter(RESULT_ITEM_CODE %in% c("RENIN ACTIVITY","RENIN", "PLASMA RENIN ACTIVITY, LC/MS/MS", "PLASMA RENIN ACTIVITY")) %>%
+      mutate(Test = "PRA")
+    
+    
+    ret <- dat %>% 
+      filter(RESULT_ITEM_CODE %in% c("DIRECT RENIN")) %>% 
+      mutate(Test = "DRC") %>%
+      rbind(., ret)
+    
+    ret <- dat %>% 
+      filter(RESULT_ITEM_CODE %in% c("ALDOSTERONE, SERUM", "ALDOSTERONE, LC/MS/MS", "ALDOSTERONE")) %>%
+      mutate(Test = "Aldo") %>%
+      rbind(., ret)
+    
+    # # Create HAR
+    # ret$HAR <- ifelse(is.na(ret$HAR_NUMBER), 
+    #                   paste(ret$EMPI, format(ret$ENC_DATE, "%Y-%m-%d")),
+    #                   ret$HAR_NUMBER)
+    
+    # Create new ENC ID: EMPI_DATE
+    ret$EMPI_DATE <- paste(ret$EMPI, format(ret$ENC_DATE, "%Y-%m-%d"))
+    
+    
+    if(EMPI_DATE_Level){
+      ret <- collapse_RAR_Lab(dat=ret, EMPI_DATE_Level = EMPI_DATE_Level)
+    }
+    
+  }
+  
+  
+  
   
 }
 
-clean_RAR <- function(dat, ){
+
+
+
+collapse_RAR_Lab <- function(dat, EMPI_DATE_Level = TRUE){
+  #' This function is used to collapse RAR Lab data for ALDO/RENIN
+  #' @param dat tibble Pre-cleaned RAR Lab data, with only ALDO/RENIN tests
+  #' @param EMPI_DATE_Level logit If TRUE, collapse data into EMPI_DATE Level
+  #' @return tmp tibble Collapsed RAR Lab results
+
+
+  tmp <- dat %>%
+    ungroup() %>%
+    select(EMPI, PK_ENCOUNTER_ID, ENC_DATE, EMPI_DATE, PK_ORDER_ID, Test, RESULT_VALUE, RESULT_DATE, O_SOURCE_LAST_UPDATE, ORDER_START_DATE)
+  
+  # QC
+  # tmp %>% summarize(N_rows = n(), N_distinct_enc = n_distinct(EMPI, PK_ENCOUNTER_ID), N_distinct_collects = n_distinct(EMPI, ORDER_START_DATE), N_distinct_HAR = n_distinct(HAR))
+  
+  # Summarize at PK_ORDER_ID (QC) (--> PK_ORDER_ID level)
+  # TODO: make sure we are picking the best result
+  tmp %<>%
+    group_by(EMPI, PK_ENCOUNTER_ID, ENC_DATE, EMPI_DATE, PK_ORDER_ID, Test) %>%
+    arrange(desc(RESULT_DATE), desc(O_SOURCE_LAST_UPDATE)) %>%
+    slice(1) %>% ungroup()
+  
+  # QC
+  # tmp %>% summarize(N_rows = n(), N_distinct_enc = n_distinct(EMPI, PK_ENCOUNTER_ID), N_distinct_collects = n_distinct(EMPI, ORDER_START_DATE), N_distinct_HAR = n_distinct(HAR))
+  
+  # -> dat at unique PK_ORDER_ID level
+
+  # Summarize at Collect Time (--> EMPI + ORDER_START_DATE level)
+  # Note:In EMPI + ORDER_START_DATE (PK_ENCOUNTER_ID + ORDER_START_DATE) level, dups for tests (like two ALDO tests with same ORDER_START_DATE), pick one based on RESULT_DATE and O_SOURCE_LAST_UPDATE
+  # TODO: make sure we are picking the best result
+  tmp %<>%
+    group_by(EMPI, PK_ENCOUNTER_ID, ENC_DATE, EMPI_DATE, ORDER_START_DATE, Test) %>%
+    arrange(desc(RESULT_DATE), desc(O_SOURCE_LAST_UPDATE)) %>%
+    slice(1) %>%
+    ungroup()
+  
+  # QC
+  # tmp %>% summarize(N_rows = n(), N_distinct_enc = n_distinct(EMPI, PK_ENCOUNTER_ID), N_distinct_collects = n_distinct(EMPI, ORDER_START_DATE), N_distinct_HAR = n_distinct(HAR))
+  
+  
+  # Start to Collapse on PK_ENCOUNTER_ID level
+  # Pair based on Collect Time
+  ## Spread tmp into wide first
+  ## After spreading, for each EMPI - PK_ENCOUNTER_ID - ORDER_START_DATE, there will be only one row (containing 3 tests)
+  tmp %<>%
+    select(EMPI, PK_ENCOUNTER_ID, ENC_DATE, EMPI_DATE, ORDER_START_DATE, Test, RESULT_VALUE) %>%
+    group_by(EMPI, PK_ENCOUNTER_ID, ENC_DATE, EMPI_DATE, ORDER_START_DATE) %>%
+    spread(key = Test, value=RESULT_VALUE) %>% ungroup()
+  
+  # QC
+  # tmp %>% summarize(N_rows = n(), N_distinct_enc = n_distinct(EMPI, PK_ENCOUNTER_ID), N_distinct_collects = n_distinct(EMPI, ORDER_START_DATE), N_distinct_HAR = n_distinct(HAR))
+  
+  # Could join back to get more columns
+
+  # Merge if collect within 30 minutes
+  tmp_merged_2 <- tmp %>%
+    group_by(EMPI, PK_ENCOUNTER_ID, ENC_DATE, EMPI_DATE) %>%
+    filter(n() == 2,
+           abs(ORDER_START_DATE[1] - ORDER_START_DATE[2]) < 60*30) %>%  # merge if within 30 minutes 
+    mutate_at(vars(Aldo:DRC), funs(na.omit(.)[1])) %>%
+    slice(1) %>% ungroup()
+  
+  # Take first row if 2 rows (far apart in time) or >2 rows
+  tmp_merged_multi <- tmp %>%
+    group_by(EMPI, PK_ENCOUNTER_ID, ENC_DATE, EMPI_DATE) %>%
+    filter((n() == 2 & abs(ORDER_START_DATE[1] - ORDER_START_DATE[2]) >= 60*30) |
+             n() > 2) %>%  # merge if within 30 minutes 
+    arrange(ORDER_START_DATE) %>%
+    slice(1) %>% ungroup()
+  
+  # Combine with single row data (--> PK_ENCOUNTER_ID level)
+  tmp %<>%
+    group_by(EMPI, PK_ENCOUNTER_ID, ENC_DATE, EMPI_DATE) %>%
+    filter(n() == 1) %>%
+    ungroup() %>%
+    bind_rows(tmp_merged_2) %>%
+    bind_rows(tmp_merged_multi)
+  
+  # QC
+  # tmp %>% summarize(N_rows = n(), N_distinct_enc = n_distinct(EMPI, PK_ENCOUNTER_ID), N_distinct_collects = n_distinct(EMPI, ORDER_START_DATE), N_distinct_HAR = n_distinct(HAR))
   
   
   
+  if(EMPI_DATE_Level){
+    # Start to Collect at the EMPI_DATE level
+    # TODO: Resolve the collect times at 00:00:00 (Get Inlab or received ttime to help)
+    
+    # (1) dates are same and one of each -> merge
+    # (2) dates are same and more than one of one of them, drop
+    # (3) dates are different, pick first one
+    
+    # Explore multiple PK_ENCOUNTER_ID's in EMPI_DATE level
+    temp <- tmp %>% group_by(EMPI_DATE) %>%
+      filter(n() != 1) %>%
+      arrange(EMPI_DATE)
+    
+    
+    
+    ## (1) (2)
+    temp_12 <- temp %>% group_by(EMPI_DATE) %>% filter(n_distinct(ORDER_START_DATE) == 1) %>% ungroup()
+    
+    temp_12 %<>% group_by(EMPI_DATE) %>% 
+      filter(n_distinct(Aldo, na.rm = TRUE) %in% c(0,1) & 
+               n_distinct(DRC, na.rm = TRUE) %in% c(0,1) & 
+               n_distinct(PRA, na.rm = TRUE) %in% c(0,1)) %>%
+      mutate_at(vars(Aldo:DRC), funs(na.omit(.)[1])) %>%
+      slice(1) %>% ungroup()
+    
+    ## (3)
+    temp_3 <- temp %>% group_by(EMPI_DATE) %>%
+      filter(n_distinct(ORDER_START_DATE) != 1) %>%
+      arrange(ORDER_START_DATE) %>%
+      slice(1) %>%
+      ungroup()
+    
+    ## Merge temp_12 & temp_3 back to tmp
+    tmp %<>% group_by(EMPI_DATE) %>%
+      filter(n() == 1) %>%
+      bind_rows(temp_12, temp_3) %>%
+      ungroup()
+    
+    # QC
+    # tmp %>% summarize(N_rows = n(), N_distinct_enc = n_distinct(EMPI, PK_ENCOUNTER_ID), N_distinct_collects = n_distinct(EMPI, ORDER_START_DATE), N_distinct_HAR = n_distinct(EMPI_DATE))
+    
+    # A check on Patients with different HAR's but same ORDER_START_DATE's
+    # tmp %>% group_by(EMPI, ORDER_START_DATE) %>% filter(n() != 1)
+    
+    return(tmp)
+  }
   
   
 }
+
+
+
+
+clean_RAR <- function(dat, blood_only=TRUE){
+  #' This function is used to clean up RAR lab results
+  #' @param dat tibble Pre-cleaned RAR lab results
+  #' @param blood_only Boolean If true, only use serum/plasma test codes
+  
+  if (blood_only) { # Exclude ORDER_ITEM_CODE that are for AVS or urine specimens
+    dat <- dat[!(ORDER_ITEM_CODE %in% c("C9009900", "C9009995", "C9009997", "Q19573", "83497A"))]
+  }
+  
+}
+

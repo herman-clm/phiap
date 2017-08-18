@@ -201,6 +201,37 @@ sum(duplicated(rar_enc))
 No dups.
 
 
+```{r Remove data}
+
+# Keep "OUTPATIENT"
+rar_enc %<>% filter(PATIENT_MASTER_CLASS == "OUTPATIENT")
+
+# Remove those with 1/2 BP missing
+rar_enc %<>% filter(!(is.na(BP_SYSTOLIC) | is.na(BP_DIASTOLIC))) %>%
+      select(EMPI, PK_ENCOUNTER_ID, ENC_DATE, E_SOURCE_LAST_UPDATE, HAR_NUMBER, 
+             BP_SYSTOLIC, BP_DIASTOLIC)
+
+rar_enc <- id_date(rar_enc)
+
+# Create new HAR: HAR_NUMBER or EMPI + ENC Date
+rar_enc$HAR <- ifelse(is.na(rar_enc$HAR_NUMBER), 
+                        paste(rar_enc$EMPI, format(rar_enc$ENC_DATE, "%Y-%m-%d")),
+                        rar_enc$HAR_NUMBER)
+
+length(unique(rar_enc$HAR))
+```
+
+```{r Collapse into HAR Level}
+
+rar_enc %<>% group_by(HAR) %>%
+      arrange(desc(E_SOURCE_LAST_UPDATE)) %>%
+      mutate_at(vars(BP_SYSTOLIC:BP_DIASTOLIC), funs(median(., na.rm = FALSE))) %>%
+      slice(1) %>%
+      ungroup()
+```
+
+
+
 ## HERMANDA_RARV3.csv
 ```{r Read in RAR_PTS_ENC}
 rar <- load_RAR_v3()
@@ -412,6 +443,7 @@ tmp %>% summarize(N_rows = n(), N_distinct_enc = n_distinct(EMPI, PK_ENCOUNTER_I
 #   arrange(EMPI, PK_ENCOUNTER_ID, Test, N)
 
 # Summarize at Collect Time (--> EMPI + ORDER_START_DATE level)
+# Note:In EMPI + ORDER_START_DATE (PK_ENCOUNTER_ID + ORDER_START_DATE) level, dups for tests (like two ALDO tests with same ORDER_START_DATE), pick one based on RESULT_DATE and O_SOURCE_LAST_UPDATE
 # TODO: make sure we are picking the best result
 tmp %<>%
   group_by(EMPI, PK_ENCOUNTER_ID, ENC_DATE, HAR, ORDER_START_DATE, Test) %>%
@@ -420,7 +452,11 @@ tmp %<>%
   ungroup()
 tmp %>% summarize(N_rows = n(), N_distinct_enc = n_distinct(EMPI, PK_ENCOUNTER_ID), N_distinct_collects = n_distinct(EMPI, ORDER_START_DATE), N_distinct_HAR = n_distinct(HAR))
 
+
+# Start to Collapse on PK_ENCOUNTER_ID level
 # Pair based on Collect Time
+## Spread tmp into wide first
+## After spreading, for each EMPI - PK_ENCOUNTER_ID - ORDER_START_DATE, there will be only one row (containing 3 tests)
 tmp %<>%
   select(EMPI, PK_ENCOUNTER_ID, ENC_DATE, HAR, ORDER_START_DATE, Test, RESULT_VALUE) %>%
   group_by(EMPI, PK_ENCOUNTER_ID, ENC_DATE, HAR, ORDER_START_DATE) %>%
@@ -462,39 +498,219 @@ tmp %<>%
   bind_rows(tmp_merged_multi)
 tmp %>% summarize(N_rows = n(), N_distinct_enc = n_distinct(EMPI, PK_ENCOUNTER_ID), N_distinct_collects = n_distinct(EMPI, ORDER_START_DATE), N_distinct_HAR = n_distinct(HAR))
 
-# Collect at the HAR level
-# TODO: REsolve the collect times at 00:00:00 (Get Inlab or received ttime to help)
-
-# dates are same and one of each -> merge
-# dates are same and more than one of one of them, drop
-# dates are different, pick first one
 
 
+
+# Start to Collect at the HAR level
+# TODO: Resolve the collect times at 00:00:00 (Get Inlab or received ttime to help)
+
+# (1) dates are same and one of each -> merge
+# (2) dates are same and more than one of one of them, drop
+# (3) dates are different, pick first one
+
+# Explore multiple PK_ENCOUNTER_ID's in HAR level
 temp <- tmp %>% group_by(HAR) %>%
-  summarise(N=n()) %>%
-  filter(N != 1)
+          filter(n() != 1) %>%
+          arrange(HAR)
 
-View(tmp %>% filter(HAR %in% temp$HAR))
+
+
+## (1) (2)
+temp_12 <- temp %>% group_by(HAR) %>% filter(n_distinct(ORDER_START_DATE) == 1) %>% ungroup()
+
+temp_12 %<>% group_by(HAR) %>% 
+              filter(n_distinct(Aldo, na.rm = TRUE) %in% c(0,1) & 
+                       n_distinct(DRC, na.rm = TRUE) %in% c(0,1) & 
+                       n_distinct(PRA, na.rm = TRUE) %in% c(0,1)) %>%
+              mutate_at(vars(Aldo:DRC), funs(na.omit(.)[1])) %>%
+              slice(1) %>% ungroup()
+
+## (3)
+temp_3 <- temp %>% group_by(HAR) %>%
+            filter(n_distinct(ORDER_START_DATE) != 1) %>%
+            arrange(ORDER_START_DATE) %>%
+            slice(1) %>%
+            ungroup()
+
+## Merge temp_12 & temp_3 back to tmp
+tmp %<>% group_by(HAR) %>%
+  filter(n() == 1) %>%
+  bind_rows(temp_12, temp_3) %>%
+  ungroup()
+tmp %>% summarize(N_rows = n(), N_distinct_enc = n_distinct(EMPI, PK_ENCOUNTER_ID), N_distinct_collects = n_distinct(EMPI, ORDER_START_DATE), N_distinct_HAR = n_distinct(HAR))
+
+# A check on Patients with different HAR's but same ORDER_START_DATE's
+tmp %>% group_by(EMPI, ORDER_START_DATE) %>% filter(n() != 1)
 
 ```
 
-```{r Then pair by PK_ORDER_ID}
-ret_pair <- merge(aldo, 
-                  renin,
-                  all =T, 
-                  by = "HAR")
 
-# QC
-nrow(renin)
-nrow(aldo)
-nrow(ret_pair)
 
-temp <- sqldf("SELECT *
-          FROM aldo, renin
-          WHERE aldo.PK_ORDER_ID = renin.PK_ORDER_ID")
 
-# 932 unique HAR here
+## Merge Demo, Dx, Enc, Labs
+```{r Load}
+load("bios_data.RData")
 ```
+
+
+```{r Check Common HAR's}
+# Note: n_distinct is very slow here
+# rar_enc %>% summarise(ENC_HAR = n_distinct(HAR))
+
+length(unique(rar_enc$HAR)) # 231610
+length(unique(rar_dx$HAR)) # 153682
+length(unique(rar_lab$HAR)) # 8810
+length(unique(rar_demo$EMPI)) # 7137
+
+
+
+HAR_common <- Reduce(intersect, list(unique(rar_enc$HAR), unique(rar_lab$HAR)))
+
+length(unique(HAR_common)) # 3068
+
+# check Which rar_lab HAR is not in rar_enc HAR
+temp <-  setdiff(rar_lab$HAR, rar_enc$HAR)
+
+# check those in original ENC data
+enc_ori <- fread("/data/raw_data/PA/HERMANDA_RAR_PTS_ENC.csv", header = TRUE, stringsAsFactors = FALSE)
+
+View(enc_ori[HAR_NUMBER == "201259167"])
+View(enc_ori[EMPI == 1000010437]) # This patient does not have BP's for this HAR so it's got dropped...
+
+enc_ori[HAR_NUMBER == "415298801"]
+
+# Fix to keep all ENC data (do not exclude those without BP's)
+
+```
+
+```{r Merge}
+
+load("bios_data.RData")
+# From here, we no longer use HAR. Use EMPI_DATE instead.
+
+
+rar_enc %<>% select(-c(E_SOURCE_LAST_UPDATE, PK_ENCOUNTER_ID, ENC_DATE))
+rar_dx %<>% select(-c(EMPI, CODE_STANDARD_NAME, COMMENTS, CODING_DATE, PRIMARY_YN, DX_SEQUENCE,DESCRIPTION, PK_DX_ID, SOURCE_LAST_UPDATE_DATE, ENC_DATE, PK_ENCOUNTER_ID, DX_TYPE, HAR_NUMBER))
+rar_lab %<>% select(-c(EMPI, PK_ENCOUNTER_ID))
+
+length(unique(rar_enc$EMPI_DATE)) # 1300052
+length(unique(rar_dx$EMPI_DATE)) #  149715
+length(unique(rar_lab$EMPI_DATE)) # 8801
+length(unique(rar_demo$EMPI)) # 7137
+
+
+
+
+# spread rar_dx
+rar_dx %<>% mutate(value = 1) %>%
+  spread(CODE, value, fill = 0)
+## QC: check whether rar_dx has unique rows regarding to EMPI_DATE
+length(unique(rar_dx$EMPI_DATE)) == dim(rar_dx)[1]  # TRUE
+
+## Full Join: keep all info
+rar_mg <- rar_dx %>% full_join(., rar_enc, by = "EMPI_DATE") %>% full_join(., rar_lab, by = "EMPI_DATE") %>% full_join(., rar_demo, by="EMPI")
+
+## For NA's in Dx, change them into 0
+rar_mg[,4:22] <- lapply(rar_mg[,4:22], function(x) x=ifelse(is.na(x), 0, x))
+  
+
+## QC: check the merging results
+dim(rar_mg)[1]  # 1298404 One more than ENC, because one lab's EMPI_DATE is not in enc's ----> See below
+length(unique(rar_mg$EMPI_DATE)) == dim(rar_mg)[1] # TRUE
+
+
+# # remove the ones with all NA except for demo info
+# temp <- apply(rar_mg[,8:26],1, function(x) return(sum(is.na(x)) == 17))
+
+
+
+```
+
+## Patient Level
+```{r Overview}
+length(unique(rar_mg$EMPI_DATE)) # 1300052
+length(unique(rar_mg$EMPI)) # 5677
+
+
+rar_mg %>% group_by(EMPI) %>% filter(n() == 2) %>% View()
+
+```
+
+
+```{r BPs and RAR Tests}
+pts <- rar_mg
+
+## SBP_n, DBP_n, High_BP_n
+pts %<>% group_by(EMPI) %>% 
+        mutate(SBP_n = sum(BP_SYSTOLIC >= 140, na.rm = TRUE), DBP_n = sum(BP_DIASTOLIC >= 90, na.rm = TRUE))
+
+pts %<>% group_by(EMPI) %>% 
+        mutate(High_BP_n = sum(BP_SYSTOLIC >= 140 | BP_DIASTOLIC >= 90, na.rm = TRUE))
+
+## Drop BP's
+pts %<>% select(-c(BP_SYSTOLIC, BP_DIASTOLIC))
+
+
+## Dx's
+pts %<>% group_by(EMPI) %>%
+  mutate_at(vars(`401`:I15.9), funs(sum))
+
+## RAR
+pts %<>% group_by(EMPI) %>% 
+        mutate(N = (is.na(Aldo) + is.na(PRA) + is.na(DRC))) %>%
+        arrange(EMPI, N, ENC_DATE) %>% 
+        slice(1) %>%
+        select(EMPI, PK_PATIENT_ID, GENDER_MASTER_CODE, BIRTH_DATE, RACE_MASTER_CODE, RACE_MASTER_HISPANIC_YN,ENC_DATE, `401`:I15.9, Aldo:PRA, SBP_n, DBP_n, High_BP_n)
+      
+# 7137 pts rows
+
+
+# 
+# length(unique(pts$EMPI)) == length(unique(rar_demo$EMPI)) # FALSE
+# 
+# # There is one more patient who is not in rar_demo...
+# setdiff(pts$EMPI, rar_demo$EMPI)
+# # That patient is NA?
+# 
+# which(is.na(rar_mg$EMPI))
+# rar_mg[1298404,]
+# 
+# 
+# # His EMPI is 1003748643
+# "1003748643" %in% rar_demo$EMPI # TRUE...
+# 
+# "1003748643" %in% rar_mg$EMPI # TRUE...
+# "1003748643" %in% rar_lab$EMPI
+# 
+# 
+# temp <- rar_dx %>% full_join(., rar_enc, by = "EMPI_DATE") 
+# 
+# sum(is.na(temp$EMPI)) # 0: all dx has encounter
+# 
+# temp <- rar_dx %>% full_join(., rar_enc, by = "EMPI_DATE") %>% full_join(., rar_lab, by = "EMPI_DATE")
+# sum(is.na(temp$EMPI)) # 1: one lab does not "have" enc
+# 
+# # EMPI_DATE: 1003748643 2017-03-23
+# "1003748643 2017-03-23" %in% rar_lab$EMPI_DATE # TRUE: This is in Labs
+# "1003748643 2017-03-23" %in% rar_enc$EMPI_DATE # FALSE: This is not in ENC
+# 
+# # From raw data:
+# raw_enc <- fread("/data/raw_data/PA/HERMANDA_RAR_PTS_ENC.csv", header = TRUE, stringsAsFactors = FALSE)
+# 
+# raw_enc[EMPI == "1003748643" & grepl("2017-03-23", ENC_DATE), ] # we have his data on "2017-03-23"
+# # Problem: in ENC data, selected only OUTPATIENT...
+```
+
+
+
+
+
+
+
+
+
+
+
 
 
 
