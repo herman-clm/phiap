@@ -10,11 +10,14 @@ data/
 packrat/src/
 *_files/
 
-.DS_Store
+*.DS_Store
 dat
 *#*
+*/._*
 
 data
 
 code/Python/proj.py
 code/Python/__pycache__
+
+output

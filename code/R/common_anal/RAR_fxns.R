@@ -466,40 +466,54 @@ sub_RAR_dx <- function(dat, ALDO.Dx = TRUE, HTN.Dx = TRUE, n.Dx = 10, EMPI_DATE_
   #' @param outpatient_only logit If TRUE, only include Outpatients. Default is TRUE.
   #' @return ret tibble The subset of cleaned Dx data
   
-  ret <- tibble()
+  ret <- tibble()  # return tibble
+  spec_dx <- c() # specific dx's captured
   
   if(outpatient_only){
-    dat %<>% filter(PATIENT_MASTER_CLASS == "OUTPATIENT")
+    dat %<>% 
+      filter(PATIENT_MASTER_CLASS == "OUTPATIENT")
   }
-  
-  
+ 
   # get ALDO Dx's, in a higher level
   if(ALDO.Dx){
     # catch Hyperaldo in a higher level
-    ret <- dat %>% filter(CODE_STANDARD_NAME == "ICD-10" & grepl("E26\\.*", CODE))
-   
-    ret <- dat %>% filter(CODE_STANDARD_NAME == "ICD9" & grepl("255\\.1", CODE)) %>% rbind(.,ret)
+    tmp <- dat %>% 
+      filter(CODE_STANDARD_NAME == "ICD-10" & 
+                            grepl("^E26\\.*", CODE))
+    tmp <- dat %>% 
+      filter(CODE_STANDARD_NAME == "ICD9" & 
+                            grepl("^255\\.1", CODE)) %>% 
+      rbind(., tmp)
     
-    aldo_dx <- unique(ret$CODE)
-    nd <- length(unique(ret$CODE))
+    ret %<>%
+      rbind(., tmp)
   }
   
   # get HTN Dx's, in a higher level
   if(HTN.Dx){
-    ret <- dat %>% filter(CODE_STANDARD_NAME == "ICD-10" & grepl("I10|I15", CODE))
+    tmp <- dat %>% 
+      filter(CODE_STANDARD_NAME == "ICD-10" & 
+                            grepl("^I1", CODE)) 
     
-    ret <- dat %>% filter(CODE_STANDARD_NAME == "ICD9" & grepl("401|405", CODE)) %>% rbind(.,ret)
+    tmp <- dat %>% filter(CODE_STANDARD_NAME == "ICD9" & 
+                            grepl("^40", CODE)) %>% 
+      rbind(., tmp)
     
+    ret %<>%
+      rbind(., tmp)
   }
   
   if(n.Dx != 0){
-    dx_left <- dat %>% filter(!(CODE %in% aldo_dx)) %>% 
+    top_dx_left <- dat %>% 
+      filter(!(CODE %in% unique(ret$CODE))) %>% 
       group_by(CODE) %>%
       summarise(N=n()) %>%
       arrange(desc(N)) %>%
       slice(., 1:n.Dx)
     
-    ret <- dat %>% filter(CODE %in% dx_left$CODE) %>% rbind(., ret)
+    ret <- dat %>% 
+      filter(CODE %in% top_dx_left$CODE) %>% 
+      rbind(., ret)
   }
   
   
@@ -509,9 +523,9 @@ sub_RAR_dx <- function(dat, ALDO.Dx = TRUE, HTN.Dx = TRUE, n.Dx = 10, EMPI_DATE_
   #                       ret$HAR_NUMBER)
   
   # Create new ENC ID: EMPI_DATE
-  ret$EMPI_DATE <- paste(ret$EMPI, format(ret$ENC_DATE, "%Y-%m-%d"))
-  
-  
+  # TODO: pull this out into fuction
+  ret$EMPI_DATE <- paste(ret$EMPI, 
+                         format(ret$ENC_DATE, "%Y-%m-%d"))
   
   if(EMPI_DATE_Level){
     # collapse into EMPI_DATE Level
@@ -525,11 +539,6 @@ sub_RAR_dx <- function(dat, ALDO.Dx = TRUE, HTN.Dx = TRUE, n.Dx = 10, EMPI_DATE_
       arrange(desc(SOURCE_LAST_UPDATE_DATE), 
               desc(PRIMARY_YN), DX_SEQUENCE, desc(COMMENTS)) %>% # Pick Unique CODE for each EMPI_DATE (for now)
       slice(1)
-    
-    
-
-  
-    
   }
   
   # TODO: If HAR_Level = FALSE, need to collapse into PK_ENCOUNTER_ID level
@@ -810,7 +819,7 @@ collapse_RAR_Lab <- function(dat, EMPI_DATE_Level = TRUE){
 
 
 
-
+# TODO: not finished
 clean_RAR <- function(dat, blood_only=TRUE){
   #' This function is used to clean up RAR lab results
   #' @param dat tibble Pre-cleaned RAR lab results
@@ -822,3 +831,66 @@ clean_RAR <- function(dat, blood_only=TRUE){
   
 }
 
+
+rar_merge <- function(rar_dx, rar_enc, rar_lab, rar_demo){
+  #' This function is used to load in rar_enc,rar_dx, rar_lab, rar_demo data sets and merge them together
+  #' for a encounter level data set
+  #' @param rar_dx tibble Diagnosis data set
+  #' @param rar_enc tibble Encounter data set
+  #' @param rar_lab tibble Lab tests data set
+  #' @param rar_demo tibble Patients' demographic data set
+  
+  
+  
+  
+  # Merge all files
+  # TODO: change Merge Part into a function
+  ## drop some columns
+  rar_enc %<>% 
+    select(-c(E_SOURCE_LAST_UPDATE, PK_ENCOUNTER_ID, ENC_DATE))
+  rar_dx %<>% 
+    select(-c(EMPI, CODE_STANDARD_NAME, COMMENTS, CODING_DATE, PRIMARY_YN, DX_SEQUENCE,DESCRIPTION, PK_DX_ID, 
+              SOURCE_LAST_UPDATE_DATE, ENC_DATE, PK_ENCOUNTER_ID, DX_TYPE, HAR_NUMBER))
+  rar_lab %<>% 
+    select(-c(EMPI, PK_ENCOUNTER_ID, ENC_DATE))
+  rar_demo %<>% select(-PK_PATIENT_ID)
+  
+  # spread rar_dx
+  rar_dx %<>% 
+    mutate(value = 1) %>%
+    spread(CODE, value, fill = 0)
+  ## QC: check whether rar_dx has unique rows regarding to EMPI_DATE
+  ## length(unique(rar_dx$EMPI)) == dim(rar_dx)[1]
+  
+  id <- "EMPI_DATE"
+  ## Full Join: keep all info
+  rar_mg <- rar_dx %>% 
+    full_join(., rar_enc, by = "EMPI_DATE") %>% 
+    full_join(., rar_lab, by = "EMPI_DATE") %>% 
+    full_join(., rar_demo, by="EMPI")
+  
+  dx_code_start <- which(names(rar_mg) == id)[1] + 1
+  dx_code_end <- ncol(rar_dx)
+  
+  ## For NA's in Dx, change them into 0
+  rar_mg[, dx_code_start:dx_code_end] <- lapply(rar_mg[, dx_code_start:dx_code_end], 
+                                                function(x) { ifelse(is.na(x), 
+                                                                     0, 
+                                                                     x) })
+  
+  ## Add age
+  ## extract ENC_DATE from EMPI_DATE
+  # TODO: pass enc_date explicitly
+  rar_mg$ENC_DATE <- as.POSIXct(substr(rar_mg$EMPI_DATE, 12, 21), 
+                                format = "%Y-%m-%d")
+  rar_mg$Age <- floor(as.numeric(rar_mg$ENC_DATE - rar_mg$BIRTH_DATE)/(3600 * 24 * 365.25))
+  
+  
+  
+  
+  
+  
+  
+  
+  
+}

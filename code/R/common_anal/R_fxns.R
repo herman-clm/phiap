@@ -111,26 +111,79 @@ fscore <- function(sens, ppv, beta=0.33) {
   x <- as.numeric((1 + beta^2) * (ppv * sens) / ((beta^2 * ppv) + sens))
   return(x)
 }
-deidentify <- function(dat, id_cols=c(), dt_cols=c(), drop_cols=c()) {
-  tmp <- dat
-  
-  #drop columns
-  tmp <- tmp %>% dplyr::select(-one_of(drop_cols))
-  
-  # deidentify columns
-  for (col in id_cols) {
-    tmp[[col]] <- as.numeric(as.factor(tmp[[col]]))
-  }
 
-    # Shift each id by somewhere between -14 and +14 days
-  if (length(dt_cols)) {
-    tmp %<>%
-      group_by_(.dots=id_cols[1]) %>%
-      mutate(shift = runif(min=-60*60*24*14, max=60*60*24*14, n=1)) %>%
-      mutate_each_(funs(. + shift), dt_cols) %>%
-      dplyr::select(-shift)
+
+
+deidentify <- function(dat, main_id, pt_id="EMPI", dt_cols=c(), drop_cols=c(), out_file_for_mapping) {
+  #' This function is used to de-identify Patients' info, like EMPI, PK_PATIENT_ID, and Dates
+  #' @param dat tibble Data frame needs de-identified
+  #' @param main_id character Only unique ID column.
+  #' @param id character EMPI
+  #' @param dt_cols vector A list of Dates that need to be modified
+  #' @param drop_cols vector A list of variables to drop. (should include other IDs)
+  #' @param out_file_for_mapping character String for location and file name to store the mapping info; 
+  #' also, it is the file to read in mapping info
+  #' Note that the ID columns should be unique themselves... i.e., each row of data could identified by its unique ID
+
+  
+  tmp <- dat %>% ungroup()
+  
+  # drop specified columns
+  tmp <- tmp %<>% select(-one_of(drop_cols))
+  
+  if(!is.null(main_id)){
+    # list of EMPI
+    EMPI <- unique(tmp[[pt_id]])
+    
+    # Generate random DE_PT_ID and shift time for EMPI
+    EMPI_ls <- tibble(EMPI = EMPI, 
+                      DE_PT_ID = sample(x = length(EMPI), size = length(EMPI), replace = FALSE), 
+                      shift = sample(x=-14:14, size = length(EMPI), replace = TRUE)*60*60*24)
+    
+    tmp <- tmp %<>% full_join(., EMPI_ls, by = "EMPI")
+    
+    # Generate DE_EMPI_DATE_ID for main_id
+    # DE_EMPI_DATE_ID <- paste("DE_", main_id, "_ID", sep = "")
+    tmp$DE_EMPI_DATE_ID <-  sample(x = nrow(tmp), size = nrow(tmp), replace = FALSE)
+    
+    # re-substract EMPI_ID_list and write out
+    ## get positions first for a fast subsetting
+    temp <- match(c(pt_id, "DE_PT_ID","shift", main_id, "DE_EMPI_DATE_ID"), names(tmp))
+    EMPI_ID_ls <- tmp %>% select(temp)
+    
+    write.csv(EMPI_ID_ls, file = out_file_for_mapping, row.names = FALSE)
+    
+  }else{
+    
+    EMPI_ID_ls <- read.csv(out_file_for_mapping, stringsAsFactors = FALSE, header = TRUE)
+    EMPI_ID_ls <- unique(EMPI_ID_ls[c(pt_id, "DE_PT_ID","shift")])
+    EMPI_ID_ls$EMPI <- as.character(EMPI_ID_ls$EMPI)
+    EMPI_ID_ls$DE_PT_ID <- as.character(EMPI_ID_ls$DE_PT_ID)
+    
+    tmp %<>% full_join(., EMPI_ID_ls, by = "EMPI")
   }
-  tmp
+  
+ 
+  # Shift each patient by somewhere between -14 and +14 days
+  if (length(dt_cols)) {
+
+    tmp %<>% mutate_at(vars(dt_cols), funs(. + shift))
+  }
+  
+  
+  
+  # remove ID's and shift
+  if(!is.null(main_id)){
+    temp <- match(c(pt_id, main_id, "shift"), names(tmp))
+  }else{
+    temp <- match(c(pt_id, "shift"), names(tmp))
+  }
+  
+  tmp %<>% select(-temp)
+  
+  
+  
+  return(tmp)
 }
 
 id_date <- function(dat, hold_id = NA, hold_date = NA){
