@@ -114,67 +114,115 @@ fscore <- function(sens, ppv, beta=0.33) {
 
 
 
-deidentify <- function(dat, main_id, pt_id="EMPI", dt_cols=c(), drop_cols=c(), out_file_for_mapping) {
+deidentify <- function(dat, 
+                       seed,
+                       mode,
+                       primary_key=NULL, 
+                       pt_id="EMPI", 
+                       out_file_for_mapping=NULL, 
+                       in_file_for_mapping=NULL,
+                       dt_cols=c(), 
+                       drop_cols=c(), 
+                       logger = NULL) {
   #' This function is used to de-identify Patients' info, like EMPI, PK_PATIENT_ID, and Dates
+  #' The function has two modes: 
+  #' "create" - de-identify data file and create a de-id mapping file; 
+  #' "load" - read in de-id mapping and use it to de-identify data file (use this for patient level, most time)
+  #' Note: currently, the "load" function is only designed for de-identifying patient_level data
   #' @param dat tibble Data frame needs de-identified
-  #' @param main_id character Only unique ID column.
-  #' @param id character EMPI
+  #' @param primary_key character Only unique ID for rows
+  #' @param pt_id character Patient ID. Default is EMPI
   #' @param dt_cols vector A list of Dates that need to be modified
   #' @param drop_cols vector A list of variables to drop. (should include other IDs)
   #' @param out_file_for_mapping character String for location and file name to store the mapping info; 
-  #' also, it is the file to read in mapping info
-  #' Note that the ID columns should be unique themselves... i.e., each row of data could identified by its unique ID
-
+  #' @param in_file_for_mapping character String for loacation where the mapping info is stored
+  #' @param seed integer A fixed seed is best for reproductive research when generating Deidentified ID's
   
   tmp <- dat %>% ungroup()
   
   # drop specified columns
   tmp <- tmp %<>% select(-one_of(drop_cols))
   
-  if(!is.null(main_id)){
-    # list of EMPI
-    EMPI <- unique(tmp[[pt_id]])
+  
+  # If "load", then assert in_file_for_mapping exists and load
+  # If "create", then assert primary_key is provided
+  
+  if(mode == "create"){
+    # assert primary_key exists
+    if(is.null(primary_key)){
+      if(!is.null(logger)) logger$error("Main ID not provided in create mode.")
+      stop("Main ID not provided in create mode")
+    }
+    # assert out_file_for_mapping exists
+    if(is.null(out_file_for_mapping)){
+      if(!is.null(logger)) logger$error("deidentify: Output Mapping File is not provided")
+      stop("No output mapping file provided")
+    }
+    
+    
+    # get a unique vector for Patient ID
+    pt_id_vec <- unique(tmp[[pt_id]])
+   
     
     # Generate random DE_PT_ID and shift time for EMPI
-    EMPI_ls <- tibble(EMPI = EMPI, 
-                      DE_PT_ID = sample(x = length(EMPI), size = length(EMPI), replace = FALSE), 
-                      shift = sample(x=-14:14, size = length(EMPI), replace = TRUE)*60*60*24)
+    set.seed(seed)
+    pt_id_ls <- tibble(DE_PT_ID = sample(x = length(pt_id_vec), size = length(pt_id_vec), replace = FALSE), 
+                      shift = sample(x=-14:14, size = length(pt_id_vec), replace = TRUE)*60*60*24)
+    pt_id_ls[[pt_id]] <- pt_id_vec
+    tmp <- tmp %<>% full_join(., pt_id_ls, by = pt_id)
     
-    tmp <- tmp %<>% full_join(., EMPI_ls, by = "EMPI")
+    # Generate DE_primary_key for primary_key
     
-    # Generate DE_EMPI_DATE_ID for main_id
-    # DE_EMPI_DATE_ID <- paste("DE_", main_id, "_ID", sep = "")
-    tmp$DE_EMPI_DATE_ID <-  sample(x = nrow(tmp), size = nrow(tmp), replace = FALSE)
+    tmp$DE_primary_key <-  sample(x = nrow(tmp), size = nrow(tmp), replace = FALSE)
     
-    # re-substract EMPI_ID_list and write out
+    # Get a full mapping between pt_id, DE_PT_ID, shift, primary_key, DE_primary_key
     ## get positions first for a fast subsetting
-    temp <- match(c(pt_id, "DE_PT_ID","shift", main_id, "DE_EMPI_DATE_ID"), names(tmp))
-    EMPI_ID_ls <- tmp %>% select(temp)
+    temp <- match(c(pt_id, "DE_PT_ID","shift", primary_key, "DE_primary_key"), 
+                  names(tmp))
+    mapping_ls <- tmp %>% select(temp)
+    if(!is.null(logger)) logger$info("deidentify: %d rows with %d Primary Keys are de-identified", nrow(tmp), length(unique(mapping_ls[[primary_key]])))
     
-    write.csv(EMPI_ID_ls, file = out_file_for_mapping, row.names = FALSE)
+    write.csv(mapping_ls, file = out_file_for_mapping, row.names = FALSE)
+    if(!is.null(logger)) logger$info("deidentify: mapping file created")
+    
+  }else if(mode == "load"){
+    # assert in_file_for_mapping exists
+    if(is.null(in_file_for_mapping)){
+      logger$error("deidentify: Input Mapping File is not provided")
+      stop("No stored mapping file provided")
+    }
+    
+    mapping_ls <- read.csv(in_file_for_mapping, stringsAsFactors = FALSE, header = TRUE)
+    mapping_ls <- unique(mapping_ls[c(pt_id, "DE_PT_ID","shift")])
+    mapping_ls[[pt_id]] <- as.character(mapping_ls[[pt_id]])
+    mapping_ls[["DE_PT_ID"]] <- as.character(mapping_ls[["DE_PT_ID"]])
+    
+    # assert whether all patient ID that need de-identified exist in mapping file
+    if(length(setdiff(unique(tmp[[pt_id]]), mapping_ls[[pt_id]])) != 0){
+      if(!is.null(logger)) logger$error("deidentify: Some patient ID does not exist in mapping file. Need generate new mapping")
+      stop("Some patient ID not found in mapping file")
+    }
+    
+    tmp %<>% full_join(., mapping_ls, by = pt_id)
     
   }else{
-    
-    EMPI_ID_ls <- read.csv(out_file_for_mapping, stringsAsFactors = FALSE, header = TRUE)
-    EMPI_ID_ls <- unique(EMPI_ID_ls[c(pt_id, "DE_PT_ID","shift")])
-    EMPI_ID_ls$EMPI <- as.character(EMPI_ID_ls$EMPI)
-    EMPI_ID_ls$DE_PT_ID <- as.character(EMPI_ID_ls$DE_PT_ID)
-    
-    tmp %<>% full_join(., EMPI_ID_ls, by = "EMPI")
+    if(!is.null(logger)) logger$error("deidentify: Unrecoginized Mode. Mode should only be 'create' or 'load'")
+    stop("Unrecoginized Mode. Mode should only be 'create' or 'load'")
   }
+  
   
  
   # Shift each patient by somewhere between -14 and +14 days
   if (length(dt_cols)) {
-
     tmp %<>% mutate_at(vars(dt_cols), funs(. + shift))
+    if(!is.null(logger)) logger$info("deidentify: Specified Dates were shifted")
   }
   
   
   
   # remove ID's and shift
-  if(!is.null(main_id)){
-    temp <- match(c(pt_id, main_id, "shift"), names(tmp))
+  if(!is.null(primary_key)){
+    temp <- match(c(pt_id, primary_key, "shift"), names(tmp))
   }else{
     temp <- match(c(pt_id, "shift"), names(tmp))
   }
@@ -185,6 +233,7 @@ deidentify <- function(dat, main_id, pt_id="EMPI", dt_cols=c(), drop_cols=c(), o
   
   return(tmp)
 }
+
 
 id_date <- function(dat, hold_id = NA, hold_date = NA){
   #' This is the function used to change ID's into character, and Dates to DATETIME
@@ -197,8 +246,12 @@ id_date <- function(dat, hold_id = NA, hold_date = NA){
   
   dat <- as.tibble(dat)
   
+  # Pull out the char_col and date_col lists
+  # assert that "ID" columns are in one and that "DATE" is in the other
+  
   # Change ID's to character
-  to_char <- col_name %in% setdiff(c("EMPI", "PK_ENCOUNTER_ID", "HAR_NUMBER", "PK_ORDER_ID","PK_ORDER_RESULT_ID", "PK_DX_ID", "PK_PATIENT_ID", "MRN", "PK_ORDER_PERFORMED_ID"), hold_id)
+  to_char <- col_name %in% 
+    setdiff(c("EMPI", "PK_ENCOUNTER_ID", "HAR_NUMBER", "PK_ORDER_ID","PK_ORDER_RESULT_ID", "PK_DX_ID", "PK_PATIENT_ID", "MRN", "PK_ORDER_PERFORMED_ID"), hold_id)
   
   dat[,to_char] <- lapply(dat[,to_char], as.character)
   
@@ -212,4 +265,56 @@ id_date <- function(dat, hold_id = NA, hold_date = NA){
   
   
   return(dat)
+}
+
+
+fread_epic <- function(dat_file, colClasses, logger = NULL){
+  #' This is a generalized version of fread, which could handle date time and do logging when reading raw data in
+  #' @param dat_file character File of raw data
+  #' @param colClasses A character vector of classes for all columns
+  #' it only contain 4 classes: PDS_DateTime, character, numeric, factor
+  #' @return dat tibble Loaded raw data
+  
+  
+
+  # assert that all specified classes could be processed
+  unspecified_class <- setdiff(colClasses,c("PDS_DateTime",'character', 'numeric', 'factor'))
+  if(length(unspecified_class) != 0){
+    err_msg <- sprintf("fread: There are unspecified Column Classes: %s", paste(unspecified_class, collapse = ","))
+    if(!is.null(logger)) logger$error(err_msg)
+    stop(err_msg)
+  }
+  
+  # get Date-Time variables
+  datetime_vars <- names(colClasses)[which(colClasses == "PDS_DateTime")]
+  
+  # for fread, specifiy Date-Time as factor, then read-in
+  colClasses_fread <- ifelse(colClasses == "PDS_DateTime", 'factor', colClasses)
+  dat <- fread(dat_file, header = TRUE, na.strings = "",
+                   colClasses = colClasses_fread, stringsAsFactors = FALSE)
+  
+  
+  dat <- as.tibble(dat)
+  # change Date-Time into POSIXct format
+  dat %<>% mutate_at(vars(datetime_vars), .funs=as_datetime)
+  
+  
+  # check whether there is un-specified column
+  unspecified_col <- setdiff(names(dat), names(colClasses))
+  if(length(unspecified_col) != 0){
+    
+    err_msg <- sprintf("load function: There are unspecified Columns in raw data: %s", 
+                       paste(unspecified_col, collapse = ","))
+    if (!is.null(logger)) logger$error(err_msg) 
+    stop(err_msg)
+  }
+  
+  if(!is.null(logger)){
+    logger$info("Raw data from file [%s] loaded in: Success", basename(dat_file))
+  }
+  
+  return(dat)
+  
+  
+  
 }

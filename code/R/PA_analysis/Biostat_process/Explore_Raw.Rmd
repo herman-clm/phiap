@@ -1,0 +1,345 @@
+---
+title: "Explore Raw Data for Biostat"
+output: html_document
+---
+
+```{r setup, include=FALSE, cache=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(data.table)
+library(tibble)
+
+```
+
+## Labs
+Read in labs
+```{r}
+rar_lab <- load_Lab(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_LABS.csv", lab_source = "ALL", adjust_up = 1.5, adjust_down = 0.5)
+nrow(rar_lab) == length(unique(rar_lab$PK_ORDER_RESULT_ID)) # FALSE
+```
+
+Check what is duplicated for PK_ORDER_RESULT_ID
+```{r}
+temp <- duplicated(rar_lab$PK_ORDER_RESULT_ID)
+head(which(temp))
+
+rar_lab[5420305:5420310,] %>% View()
+# NA's in PK_ORDER_RESULT_ID
+sum(!is.na(rar_lab[which(is.na(rar_lab$PK_ORDER_RESULT_ID)), "RESULT_VALUE"])) # 0
+
+
+```
+This means that those with NA PK_ORDER_RESULT_ID all have a missing RESULT_VALUE. So remove them.
+
+```{r}
+dat <- rar_lab
+nrow(dat) == length(unique(dat$PK_ORDER_RESULT_ID))
+```
+Now, PK_ORDER_ID could be unique ID
+
+
+
+Include RAR, POTASSIUM, and top 44 most common lab tests
+```{r}
+dat %<>% filter(!is.na(dat$PK_ORDER_RESULT_ID))
+
+# Create new ENC ID: EMPI_DATE
+dat$EMPI_DATE <- paste(dat$EMPI, format(dat$ENC_DATE, "%Y-%m-%d"))
+
+# Create ret table
+ret <- as.tibble()
+
+# RAR
+## catch "ALDO"|"RENIN"
+dat_rar <- dat %>% filter(grepl("renin|aldo", tolower(RESULT_ITEM_CODE))) %>%
+  group_by(ORDER_ITEM_CODE, RESULT_ITEM_CODE)
+
+## Exclude ORDER_ITEM_CODE that are for AVS or urine specimens
+dat_rar %<>% filter(!(ORDER_ITEM_CODE %in%  c("C9009900", "C9009995", "C9009997", "Q19573", "83497A")))
+
+
+## dropped many rows here
+ret <- dat_rar %>% 
+  filter(RESULT_ITEM_CODE %in% c("RENIN ACTIVITY","RENIN", "PLASMA RENIN ACTIVITY, LC/MS/MS", "PLASMA RENIN ACTIVITY")) %>%
+  mutate(Test = "PRA")
+
+
+ret <- dat_rar %>% 
+  filter(RESULT_ITEM_CODE %in% c("DIRECT RENIN")) %>% 
+  mutate(Test = "DRC") %>%
+  rbind(., ret)
+
+ret <- dat_rar %>% 
+  filter(RESULT_ITEM_CODE %in% c("ALDOSTERONE, SERUM", "ALDOSTERONE, LC/MS/MS", "ALDOSTERONE")) %>%
+  mutate(Test = "Aldo") %>%
+  rbind(., ret)
+
+ret %<>% ungroup()
+
+
+ret <- dat  %>% filter(RESULT_ITEM_CODE == "POTASSIUM") %>% 
+          mutate(Test = "POTASSIUM") %>%
+          rbind(., ret)
+
+
+
+num_labs <- 44
+
+ric_ranked_lt <- dat %>% group_by(RESULT_ITEM_CODE) %>%
+    summarise(N = n()) %>%
+    arrange(desc(N)) %>%
+    na.omit(.) %>%
+    filter(!(RESULT_ITEM_CODE %in% c("POTASSIUM") | RESULT_ITEM_CODE %in% dat_rar$RESULT_ITEM_CODE))
+  
+  # num_labs = 44 for CBC (Complete Blood Count) & CMP (Comprehensive Metabolic Panel)
+  ric_lt <- ric_ranked_lt[1:num_labs,]
+  
+  ret <- dat %>% filter(RESULT_ITEM_CODE %in% ric_lt$RESULT_ITEM_CODE) %>%
+          mutate(Test = RESULT_ITEM_CODE) %>%
+          rbind(., ret)
+  
+length(unique(ret$PK_ORDER_ID))
+ret$oid_ric <- paste(ret$PK_ORDER_ID, ret$RESULT_ITEM_CODE, sep = "_")
+length(unique(ret$oid_ric)) # result will have 3763013 rows
+```
+
+
+Get duplicated oid_ric
+```{r}
+dups <- ret[which(duplicated(ret$oid_ric)), "oid_ric"]
+```
+
+
+```{r}
+r0 <- ret %>% filter(oid_ric %in% dups$oid_ric) %>% arrange(oid_ric)
+View(r0)
+
+# list for those have only one RESULT_STATUS
+tp <- r0 %>% group_by(oid_ric) %>% summarise(N = n_distinct(RESULT_STATUS)) %>% filter(N == 1)
+# For them, see what is the difference except for PK_ORDER_RESULT_ID
+
+
+r0 %>% filter(oid_ric %in% tp$oid_ric) %>% group_by(oid_ric) %>% select(-PK_ORDER_RESULT_ID) %>% summarise(N_d = n_distinct(RESULT_VALUE)) %>%
+  arrange(desc(N_d))
+
+r0 %>% filter(oid_ric == "2394114570_ALT") %>% mutate_at(vars(RESULT_VALUE), funs(median(., na.rm = TRUE))) %>% View()
+```
+
+
+Apply:
+```{r}
+ret$RESULT_STATUS <- factor(ret$RESULT_STATUS, levels = c("Corrected", "Final", "Preliminary", "Incomplete", NA))
+temp <- ret %>% group_by(PK_ORDER_ID, RESULT_ITEM_CODE) %>%
+          arrange(RESULT_STATUS) %>% mutate_at(vars(RESULT_VALUE), funs(median(., na.rm = TRUE))) %>% slice(1) 
+          
+  
+```
+
+Quality Checking
+```{r}
+length(unique(temp$oid_ric)) # The number matches the UNIQUE OID_RIC
+```
+QC - "2393819447_INR"
+```{r}
+View(temp %>% filter(oid_ric == "2393819447_INR"))
+View(subset(temp, oid_ric == "2393874016_# LYMPHOCYTES"))
+```
+Not correct... for oid_ric which has multiple levels in RESULT_STATUS, should only pick the higher level.   
+
+
+Another Approach:
+Separate ret into two groups: oid_ric has only one record; oid_ric has multitple records
+```{r}
+r0 <- subset(ret, !(oid_ric %in% dups$oid_ric))
+r1 <- subset(ret, oid_ric %in% dups$oid_ric)
+
+r1 %<>%
+  group_by(oid_ric, RESULT_STATUS) %>%
+  mutate_at(vars(RESULT_VALUE), funs(median(., na.rm = TRUE))) %>%
+  ungroup() %>%
+  group_by(oid_ric) %>%
+  arrange(RESULT_STATUS) %>%
+  slice(1)
+```
+
+
+### Collapse into EMPI_DATE level
+```{r}
+lab_raw <- load_Lab(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_LABS.csv", lab_source = "ALL",
+                    adjust_up = 1.5, adjust_down = 0.5)
+
+lab <- clean_Lab(dat = rar_lab, RAR_only = FALSE, potassium_in = TRUE,
+                         num_labs=44, EMPI_DATE_Level = TRUE)
+
+```
+temp is in PK_ORDER_ID + RESULT_ITEM_CODE level. Next step is to collapse it into EMPI_DATE level.
+
+Use previous function to deal with RAR Labs
+```{r}
+rar_lab <- subset(lab, Test %in% c("PRA", "DRC", "Aldo"))
+rar_lab_collapse <- collapse_RAR_Lab(dat=rar_lab, EMPI_DATE_Level = TRUE)
+```
+
+
+For other labs
+```{r}
+other_lab <- subset(lab, !(Test %in% c("PRA", "DRC", "Aldo")))
+nrow(other_lab) # 3746487 rows: PK_ORDER_ID + RIC
+length(unique(other_lab$Test)) # 45 other lab tests
+length(unique(other_lab$EMPI_DATE)) # 159455 unique EMPI_DATE
+```
+
+```{r}
+temp <- paste(other_lab$EMPI_DATE, other_lab$RESULT_ITEM_CODE)
+length(unique(temp)) # 2856910 - Goal for other_lab_EMPI_DATE_RIC
+```
+This means that for some EMPI_DATE, there are some multiple same tests taken. So split:
+
+```{r}
+# create a new temporary ID: EMPI_DATE + RESULT_ITEM_CODE
+other_lab$EMPI_DATE_RIC <- paste(other_lab$EMPI_DATE, other_lab$RESULT_ITEM_CODE)
+dups <- other_lab[duplicated(other_lab$EMPI_DATE_RIC), 'EMPI_DATE_RIC']
+r0 <- subset(other_lab, !(EMPI_DATE_RIC %in% dups$EMPI_DATE_RIC))
+r1 <- subset(other_lab, EMPI_DATE_RIC %in% dups$EMPI_DATE_RIC)
+length(unique(r1$EMPI_DATE_RIC))  # 199134 - Goal for r1
+
+
+tpp <- paste(other_lab$EMPI_DATE_RIC, other_lab$PK_ORDER_ID)
+
+sum(duplicated(tpp)) # 0
+```
+The sum equal to 0, which means in each EMPI_DATE_RIC, there is only one PK_ORDER_ID. For duplicates in EMPI_DATE_RIC, some of them are paired, so pick one according to PK_ORDER_ID
+
+```{r}
+r1 %<>% group_by(EMPI_DATE_RIC) %>% arrange(desc(PK_ORDER_ID)) %>% slice(1)
+nrow(r1) # 199134
+```
+This matches the unique EMPI_DATE_RIC for r1.   
+
+Combine back r0 and r1. Then Spread into EMPI_DATE table. Since unit of measure is also important, combine it with Test
+```{r}
+other_lab_EMPI_DATE_RIC <- r0 %>% bind_rows(., r1)
+other_lab_EMPI_DATE_RIC$Test <- paste(other_lab_EMPI_DATE_RIC$Test, other_lab_EMPI_DATE_RIC$UNIT_OF_MEASURE, sep = "_")
+```
+Remove cols to spread:
+```{r}
+other_lab_EMPI_DATE_RIC %<>% select(EMPI_DATE, Test, RESULT_VALUE)
+
+other_lab_EMPI_DATE <- other_lab_EMPI_DATE_RIC %>% spread(., key = Test, value = RESULT_VALUE, sep = "_")
+
+nrow(other_lab_EMPI_DATE)
+```
+It matches the unique EMPI_DATE in other_lab. Should add EMPI and ENC_DATE back
+```{r}
+other_lab_EMPI_DATE$EMPI <- substr(other_lab_EMPI_DATE$EMPI_DATE, 1, 10)
+other_lab_EMPI_DATE$ENC_DATE <- as.Date(substr(other_lab_EMPI_DATE$EMPI_DATE, 12, 21), format = "%Y-%m-%d")
+```
+
+To make rar_lab_collapse compatible with other_lab_EMPI_DATE, remove/refine columns in rar_lab_collapse:
+```{r}
+rar_lab_collapse %<>% select(-c(PK_ENCOUNTER_ID, ORDER_START_DATE))
+rar_lab_collapse$ENC_DATE <- as.Date(rar_lab_collapse$ENC_DATE)
+```
+
+Merge rar_lab_collapse and other_lab_EMPI_DATE:
+```{r}
+temp_EMPI_DATE <- append(rar_lab_collapse$EMPI_DATE, other_lab_EMPI_DATE$EMPI_DATE)
+length(unique(temp_EMPI_DATE)) # 161330
+temp <- full_join(rar_lab_collapse, other_lab_EMPI_DATE, by = "EMPI_DATE")
+nrow(temp)
+```
+Match!
+
+## Encounter
+Read in raw encounter and filter out only PATIENT_MASTER_CLASS == "OUTPATIENT"
+```{r}
+colClasses <- c(ENC_DATE = "PDS_DateTime", E_SOURCE_LAST_UPDATE = 'PDS_DateTime', 
+                  EMPI = 'character', PK_ENCOUNTER_ID = 'character', 
+                  HAR_NUMBER = 'character', PATIENT_MASTER_CLASS = 'character', ADMIT_SOURCE = 'character', 
+                  ENCOUNTER_SUB_TYPE = 'character', 
+                  ROLE_ADMIT = 'character', DISCIPLINE_ADMIT = 'character', ENC_TYPE_CODE = 'character', 
+                  ENC_TYPE_MASTER_CODE = 'character', ENC_TYPE_MASTER_DESCRIPTION = 'character', 
+                  MASTER_LOCATION_CODE = 'character', MASTER_LOCATION_DESCRIPTION = 'character', 
+                  MASTER_LOCATION_FACILITY_YN = 'character', MASTER_LOCATION_CLINIC_YN = 'character',
+                  MASTER_LOCATION_ENTITY = 'character', SERVICE_MASTER_CODE = 'character', 
+                  SERVICE_MASTER_DESCRIPTION = 'character', 
+                  BP_SYSTOLIC = 'numeric', BP_DIASTOLIC = 'numeric')
+  
+  
+  
+rar_enc <- fread_epic(dat_file = dat_file, colClasses = colClasses, logger = NULL)
+
+
+rar_enc %<>% 
+      filter(PATIENT_MASTER_CLASS == "OUTPATIENT")  
+nrow(rar_enc) # 2178870
+```
+
+Create new ENC ID: EMPI_DATE
+```{r}
+rar_enc$EMPI_DATE <- paste(rar_enc$EMPI, 
+                             format(rar_enc$ENC_DATE, "%Y-%m-%d"))
+length(unique(rar_enc$EMPI_DATE)) # 1298403 Unique EMPI_DATE <- Goal
+```
+Break rar_enc into two parts:
+```{r}
+dups <- unique(rar_enc[duplicated(rar_enc$EMPI_DATE), "EMPI_DATE"])
+
+r0 <- rar_enc %>% filter(!(EMPI_DATE %in% dups$EMPI_DATE))
+r1 <- rar_enc %>% filter(EMPI_DATE %in% dups$EMPI_DATE)
+```
+
+Deal with r1
+```{r}
+length(unique(r1$ENC_TYPE_MASTER_CODE)) # 133
+table(r1$ENC_TYPE_MASTER_DESCRIPTION)
+```
+
+Factorize part of ENC_TYPE_MASTER_CODE (Not perfect)
+```{r}
+r1$ENC_TYPE_MASTER_CODE <- factor(r1$ENC_TYPE_MASTER_CODE, levels = c("OFFICE VISIT", "LAB","SURGERY", "DAY SURG", "SURGERY, GENERAL","APPOINTMENT","ORDERS","CONSULT", "FORMS","LETTER","PHONE","SCAN - OLD RECORDS","HISTORY"))
+
+temp <- r1 %>% 
+      group_by(EMPI_DATE) %>%
+      arrange(ENC_TYPE_MASTER_CODE, desc(E_SOURCE_LAST_UPDATE)) %>%
+      mutate_at(vars(BP_SYSTOLIC:BP_DIASTOLIC), 
+                funs(median(., na.rm = FALSE))) %>%
+      slice(1) %>%
+      ungroup()
+length(unique(temp$ENC_DATE)) # 454554
+table(temp$ENC_TYPE_MASTER_CODE)
+```
+It seems that the specified 13 groups could distinguish all, unless some levels are needed inside this order.
+
+
+
+
+## Dx's
+Dx's for Obstructive Sleep Apnea
+```{r}
+rar_dx <- load_RAR_Dx()
+
+osa_9 <- rar_dx[grepl("^327.2", rar_dx$CODE), "CODE"]
+table(osa_9$CODE)
+
+```
+Additional?
+```{r}
+osa_9a <- rar_dx[grepl("^780.5", rar_dx$CODE), "CODE"]
+table(osa_9a$CODE)
+```
+
+
+
+
+```{r}
+osa_10 <- rar_dx[grepl("G47.3", rar_dx$CODE), "CODE"]
+table(osa_10$CODE)
+```
+
+Dx for Diabetes
+```{r}
+diabetes_9 <- rar_dx[grepl("^250", rar_dx$CODE), "CODE"]
+table(diabetes_9$CODE)
+```
+
