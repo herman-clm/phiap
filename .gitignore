@@ -21,3 +21,5 @@ code/Python/proj.py
 code/Python/__pycache__
 
 output
+
+*.ini
