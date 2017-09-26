@@ -1,0 +1,24 @@
+---
+title: "Descriptive Statistics on v0.2 Bios Data"
+output: html_document
+---
+
+```{r setup, include=FALSE, cache=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+
+suppressMessages(library(tidyverse))
+suppressMessages(library(ini))
+```
+
+
+```{r load_data, cache=TRUE}
+load("bios_data_enc_pts_v0.2.RData")
+
+```
+
+List:   
+Descriptive Statistics on all variables (min, max, mean, median), figures   
+Correlations among Tests, Dx's (on diffefent levels), Tests & Dx's   
+Descriptive statistics based on different groups (Dx's, Outcomes)   
+
+

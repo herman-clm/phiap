@@ -1,0 +1,184 @@
+---
+title: "Lab_PK_OID_RIC"
+output: html_document
+---
+
+```{r}
+library(ini)
+config <- read.ini("~/repos/Daniel_Herman_Aldosterone_2017_03/code/R/PA_analysis/Biostat_process/config.ini")
+
+# set directory
+working_dir <- paste(config$Directories$repos_dir, config$Directories$working_dir_suffix, sep = "/")
+
+output_dir <- paste(config$Directories$repos_dir, config$Directories$output_dir_suffix, sep = "/")
+out_root <- config$RAR$out_root
+
+# set working directory
+setwd(working_dir)
+
+```
+
+
+```{r setup, include=FALSE, cache=TRUE, root.dir=working_dir}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = working_dir)
+library(dplyr)
+library(data.table)
+library(tibble)
+suppressMessages(library(tidyr))
+setwd(working_dir)
+source("common_anal/RAR_fxns.R")
+
+```
+
+## Labs
+### Collapse into PK_ORDER_ID + RESULT_ITEM_CODE level
+Read in labs
+```{r load_lab, cache=TRUE}
+rar_lab <- load_Lab(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_LABS.csv", lab_source = "ALL", adjust_up = 1.5, adjust_down = 0.5)
+nrow(rar_lab) == length(unique(rar_lab$PK_ORDER_RESULT_ID)) # FALSE
+```
+
+Check what is duplicated for PK_ORDER_RESULT_ID
+```{r, cache=TRUE, dependson=c("load_lab")}
+temp <- duplicated(rar_lab$PK_ORDER_RESULT_ID)
+head(which(temp))
+
+rar_lab[5420305:5420310,] %>% print.data.frame()
+# NA's in PK_ORDER_RESULT_ID
+sum(!is.na(rar_lab[which(is.na(rar_lab$PK_ORDER_RESULT_ID)), "RESULT_VALUE"])) # 0
+
+
+```
+This means that those with NA PK_ORDER_RESULT_ID all have a missing RESULT_VALUE. So remove them.
+
+```{r, cache=TRUE, dependson=c("load_lab")}
+dat <- rar_lab
+nrow(dat) == length(unique(dat$PK_ORDER_RESULT_ID))
+```
+Now, PK_ORDER_ID could be unique ID
+
+
+
+Include RAR, POTASSIUM, and top 44 most common lab tests
+```{r, cache=TRUE, dependson=c("load_lab")}
+dat %<>% filter(!is.na(dat$PK_ORDER_RESULT_ID))
+
+# Create new ENC ID: EMPI_DATE
+dat$EMPI_DATE <- paste(dat$EMPI, format(dat$ENC_DATE, "%Y-%m-%d"))
+
+# Create ret table
+ret <- as.tibble()
+
+# RAR
+## catch "ALDO"|"RENIN"
+dat_rar <- dat %>% filter(grepl("renin|aldo", tolower(RESULT_ITEM_CODE))) %>%
+  group_by(ORDER_ITEM_CODE, RESULT_ITEM_CODE)
+
+## Exclude ORDER_ITEM_CODE that are for AVS or urine specimens
+dat_rar %<>% filter(!(ORDER_ITEM_CODE %in%  c("C9009900", "C9009995", "C9009997", "Q19573", "83497A")))
+
+
+## dropped many rows here
+ret <- dat_rar %>% 
+  filter(RESULT_ITEM_CODE %in% c("RENIN ACTIVITY","RENIN", "PLASMA RENIN ACTIVITY, LC/MS/MS", "PLASMA RENIN ACTIVITY")) %>%
+  mutate(Test = "PRA")
+
+
+ret <- dat_rar %>% 
+  filter(RESULT_ITEM_CODE %in% c("DIRECT RENIN")) %>% 
+  mutate(Test = "DRC") %>%
+  rbind(., ret)
+
+ret <- dat_rar %>% 
+  filter(RESULT_ITEM_CODE %in% c("ALDOSTERONE, SERUM", "ALDOSTERONE, LC/MS/MS", "ALDOSTERONE")) %>%
+  mutate(Test = "Aldo") %>%
+  rbind(., ret)
+
+ret %<>% ungroup()
+
+
+ret <- dat  %>% filter(RESULT_ITEM_CODE == "POTASSIUM") %>% 
+          mutate(Test = "POTASSIUM") %>%
+          rbind(., ret)
+
+
+
+num_labs <- 44
+
+ric_ranked_lt <- dat %>% group_by(RESULT_ITEM_CODE) %>%
+    summarise(N = n()) %>%
+    arrange(desc(N)) %>%
+    na.omit(.) %>%
+    filter(!(RESULT_ITEM_CODE %in% c("POTASSIUM") | RESULT_ITEM_CODE %in% dat_rar$RESULT_ITEM_CODE))
+  
+  # num_labs = 44 for CBC (Complete Blood Count) & CMP (Comprehensive Metabolic Panel)
+  ric_lt <- ric_ranked_lt[1:num_labs,]
+  
+  ret <- dat %>% filter(RESULT_ITEM_CODE %in% ric_lt$RESULT_ITEM_CODE) %>%
+          mutate(Test = RESULT_ITEM_CODE) %>%
+          rbind(., ret)
+  
+length(unique(ret$PK_ORDER_ID))
+ret$oid_ric <- paste(ret$PK_ORDER_ID, ret$RESULT_ITEM_CODE, sep = "_")
+length(unique(ret$oid_ric)) # result will have 3763013 rows
+```
+
+
+Get duplicated oid_ric
+```{r, cache=TRUE, dependson=c("load_lab")}
+dups <- ret[which(duplicated(ret$oid_ric)), "oid_ric"]
+```
+
+
+```{r, cache=TRUE, dependson=c("load_lab")}
+r0 <- ret %>% filter(oid_ric %in% dups$oid_ric) %>% arrange(oid_ric)
+
+
+# list for those have only one RESULT_STATUS
+tp <- r0 %>% group_by(oid_ric) %>% summarise(N = n_distinct(RESULT_STATUS)) %>% filter(N == 1)
+# For them, see what is the difference except for PK_ORDER_RESULT_ID
+
+
+r0 %>% filter(oid_ric %in% tp$oid_ric) %>% group_by(oid_ric) %>% select(-PK_ORDER_RESULT_ID) %>% summarise(N_d = n_distinct(RESULT_VALUE)) %>%
+  arrange(desc(N_d))
+
+r0 %>% filter(oid_ric == "2394114570_ALT") %>% mutate_at(vars(RESULT_VALUE), funs(median(., na.rm = TRUE))) %>% print.data.frame()
+```
+
+
+Apply:
+```{r, cache=TRUE, dependson=c("load_lab")}
+ret$RESULT_STATUS <- factor(ret$RESULT_STATUS, levels = c("Corrected", "Final", "Preliminary", "Incomplete", NA))
+temp <- ret %>% group_by(PK_ORDER_ID, RESULT_ITEM_CODE) %>%
+          arrange(RESULT_STATUS) %>% mutate_at(vars(RESULT_VALUE), funs(median(., na.rm = TRUE))) %>% slice(1) 
+          
+  
+```
+
+Quality Checking
+```{r, cache=TRUE, dependson=c("load_lab")}
+length(unique(temp$oid_ric)) # The number matches the UNIQUE OID_RIC
+```
+QC - "2393819447_INR"
+```{r, cache=TRUE, dependson=c("load_lab")}
+print.data.frame(temp %>% filter(oid_ric == "2393819447_INR"))
+print.data.frame(subset(temp, oid_ric == "2393874016_# LYMPHOCYTES"))
+```
+Not correct... for oid_ric which has multiple levels in RESULT_STATUS, should only pick the higher level.   
+
+
+Another Approach:
+Separate ret into two groups: oid_ric has only one record; oid_ric has multitple records
+```{r, cache=TRUE, dependson=c("load_lab")}
+r0 <- subset(ret, !(oid_ric %in% dups$oid_ric))
+r1 <- subset(ret, oid_ric %in% dups$oid_ric)
+
+r1 %<>%
+  group_by(oid_ric, RESULT_STATUS) %>%
+  mutate_at(vars(RESULT_VALUE), funs(median(., na.rm = TRUE))) %>%
+  ungroup() %>%
+  group_by(oid_ric) %>%
+  arrange(RESULT_STATUS) %>%
+  slice(1)
+```

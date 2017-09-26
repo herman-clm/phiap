@@ -2,6 +2,8 @@
 suppressMessages(suppressWarnings(library(magrittr)))
 suppressMessages(suppressWarnings(library(dplyr)))
 suppressMessages(suppressWarnings(library(doParallel)))
+suppressMessages(suppressWarnings(library(readxl)))
+
 
 ## @knitr general_purpose_fxns
 cores <- min(20, floor(detectCores() * 0.75))
@@ -315,6 +317,47 @@ fread_epic <- function(dat_file, colClasses, logger = NULL){
   
   return(dat)
   
-  
-  
 }
+
+
+icd_mapping <- function(dx_hierarchy_level=NULL, dx_hierarchy_level_value=NULL, logger = NULL){
+  #' This function is used to load in ICD-9/ICD-10 mappings and returns a mapping in tibble
+  #' @param dx_hierarchy_level character Indicator for Dx_h0, Dx_h1, Dx_h2 categories
+  #' @param dx_hierarchy_level_value vector A list of Hierarchy Dx's
+  #' @return ret tibble The long list of mapping info, consisting of CODE, Dx_h0, Dx_h1, Dx_h2
+  #' NOTE: the CODE may not be unique, since some codes are not specific, e.g. ICD9 250.12 could stand for both T2D and unspecified type
+  
+
+
+  dat <- read.csv(file = "/data/ref_data/icd_mapping_9_10.csv", 
+                  header = TRUE, stringsAsFactors = FALSE, colClasses = "character")
+  
+  
+  icd9 <- subset(dat, select = c(ICD_9, Dx_h0, Dx_h1, Dx_h2))
+  icd10 <- subset(dat, select = c(ICD_10, Dx_h0, Dx_h1, Dx_h2))
+  names(icd9)[1] <- "CODE"
+  names(icd10)[1] <- "CODE"
+  
+  ret <- as.tibble(bind_rows(icd9, icd10)) %>% 
+            filter(!duplicated(.) & !is.na(CODE)) %>%
+            mutate_at(vars(Dx_h0, Dx_h1, Dx_h2), funs(gsub(" ","_",.)))
+        
+  
+  
+  if(sum(duplicated(ret$CODE)) != 0 & !is.null(logger)){
+    logger$info("ICD-mapping: the sets of ICD codes are not mutually exclusive.")
+  }
+  
+  # if category and level are both null, then return a full list - Default
+  if(is.null(dx_hierarchy_level) & is.null(dx_hierarchy_level_value)){
+    return(ret)
+  }
+  
+  ret <- ret[which(ret[[dx_hierarchy_level]] %in% dx_hierarchy_level_value),]
+  
+  
+  return(ret)
+}
+
+
+

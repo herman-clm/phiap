@@ -23,3 +23,5 @@ code/Python/__pycache__
 output
 
 *.ini
+
+*.swp

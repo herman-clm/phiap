@@ -9,6 +9,8 @@ suppressPackageStartupMessages(library(data.table))
 suppressPackageStartupMessages(library(tibble))
 suppressPackageStartupMessages(library(ini))
 suppressPackageStartupMessages(library(argparse, quietly=TRUE))
+suppressPackageStartupMessages(library(tidyr, quietly=TRUE))
+suppressPackageStartupMessages(library(readxl, quietly=TRUE))
 
 
 # read in config file
@@ -63,9 +65,13 @@ rar_enc <- load_RAR_enc(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_ENC.csv",
 
 
 ## HERMANDA_RAR_PTS_DX.csv
-rar_dx <- load_RAR_Dx()
-rar_dx <- sub_RAR_dx(dat=rar_dx, ALDO.Dx = TRUE, HTN.Dx = TRUE,
-                     n.Dx = 0, EMPI_DATE_Level = TRUE, outpatient_only = TRUE)
+dx_all <- load_RAR_Dx()
+dx_all <- sub_RAR_dx(dat=dx_all, CODE_Level = "Dx_h0", 
+                     hierarchy_dx = c("Hyperaldo", "HTN", "Diabetes", "Sleep_Apnea"), 
+                     EMPI_DATE_Level = TRUE,
+                    outpatient_only = TRUE)
+
+
 
 # save(rar_enc, rar_dx, file = "bios_data.RData")
 
@@ -87,8 +93,7 @@ lab_PK_ORDER_ID_RIC <- clean_Lab(dat = lab_raw, RAR_only = FALSE, potassium_in =
 lab_all <- collapse_lab_EMPI_DATE(lab_PK_ORDER_ID_RIC)
 
 
-# save(rar_enc, rar_dx, rar_demo, rar_lab, file = "PA_analysis/Biostat_process/bios_data.RData")
-
+# save(dx_all, lab_all, rar_demo, rar_enc, file = "PA_analysis/Biostat_process/bios_data_v0.2.RData")
 
 ## HERMANDA_RARV3.csv
 # rar <- load_Lab(dat_file = "/data/raw_data/PA/HERMANDA_RARV3.csv", lab_source = "RAR",
@@ -97,11 +102,13 @@ lab_all <- collapse_lab_EMPI_DATE(lab_PK_ORDER_ID_RIC)
 
 
 
+# First version RData
+# load("PA_analysis/Biostat_process/bios_data_v0.2.RData")
 
-
-load("PA_analysis/Biostat_process/bios_data.RData")
+# Second version RData
+load("PA_analysis/Biostat_process/bios_data_v0.2.RData")
 # Merge all files
-rar_mg <- rar_merge(rar_dx = rar_dx, rar_enc = rar_enc, rar_lab = rar_lab, rar_demo = rar_demo, 
+rar_mg <- rar_merge(rar_dx = dx_all, rar_enc = rar_enc, rar_lab = lab_all, rar_demo = rar_demo, 
                   id = "EMPI_DATE", pt_id = "EMPI")
 
 
@@ -141,9 +148,22 @@ research_db <- AVS_pts %>% left_join(., empi, by = c("hosp_num" = "MRN"))
 PA_empi <- na.omit(unique(research_db$EMPI))
 
 
-rar_mg$PA_AVS_tot_0115 <- ifelse(rar_mg$EMPI %in% PA_empi, TRUE, FALSE)
+rar_mg$rar_mg$PA_AVS_tot_0115 <- ifelse(rar_mg$rar_mg$EMPI %in% PA_empi, TRUE, FALSE)
 pts$PA_AVS_tot_0115 <- ifelse(pts$EMPI %in% PA_empi, TRUE, FALSE)
 ###########   End of Research Database
+
+save(rar_mg, pts, file = "PA_analysis/Biostat_process/bios_data_enc_pts_v0.2.RData")
+
+
+
+
+
+
+
+
+
+
+
 
 
 ## De-identify RAR- ENC Level
@@ -152,7 +172,7 @@ enc_level <- deidentify(dat = rar_mg$rar_mg, primary_key = "EMPI_DATE", pt_id = 
                         drop_cols = c("SOURCE_CODE", "PATIENT_MASTER_CLASS"), 
                         dt_cols = c("ENC_DATE", "BIRTH_DATE", "ORDER_START_DATE"),
                         out_file_for_mapping = paste(output_dir, 
-                                                     paste(out_root, "de_id_enc_lv", "csv", sep="."),
+                                                     paste(out_root, "de_id_enc_lv",Sys.Date(), "csv", sep="."),
                                                      sep="/"), 
                         seed = config$RAR$seed)
 

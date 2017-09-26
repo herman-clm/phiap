@@ -1,6 +1,7 @@
 suppressMessages(library(assertthat))
 suppressMessages(library(data.table))
-
+suppressMessages(library(lubridate))
+suppressMessages(library(tidyr))
 
 
 source("common_anal/R_fxns.R")
@@ -523,12 +524,13 @@ load_RAR_Dx <- function(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_DX.csv", 
   
 }
 
-sub_RAR_dx <- function(dat, ALDO.Dx = TRUE, HTN.Dx = TRUE, n.Dx = 10, EMPI_DATE_Level = TRUE, outpatient_only = TRUE, logger = NULL){
+sub_RAR_dx <- function(dat, CODE_Level, hierarchy_dx,
+                       EMPI_DATE_Level = TRUE, outpatient_only = TRUE,
+                       logger = NULL){
   #' Getting the proper subset for Dx data
   #' @param dat tibble Pre-processed RAR Dx data
-  #' @param ALDO.Dx logit Whether to include ALDO Dx's. Default is TRUE
-  #' @param HTN.Dx logit Whether to include hypertension Dx's. Default is TRUE
-  #' @param n.Dx numeric Number of total Dx's included, ALDO/HTN excluded. Default is 10
+  #' @param CODE_Level character Specify on which level to pivot the Dx codes: "ICD", "Dx_h0", "Dx_h1", or "Dx_h2"
+  #' @param hierachy_dx vector A character vector that specifies Dx in corresponding hierarchy level
   #' @param EMPI_DATE_Level logit If TRUE, collapse data into EMPI_DATE Level. Default is TRUE
   #' @param outpatient_only logit If TRUE, only include Outpatients. Default is TRUE.
   #' @return ret tibble The subset of cleaned Dx data
@@ -536,6 +538,7 @@ sub_RAR_dx <- function(dat, ALDO.Dx = TRUE, HTN.Dx = TRUE, n.Dx = 10, EMPI_DATE_
   ret <- tibble()  # return tibble
   spec_dx <- c() # specific dx's captured
   
+
   if(outpatient_only){
     dat %<>% 
       filter(PATIENT_MASTER_CLASS == "OUTPATIENT")
@@ -543,58 +546,22 @@ sub_RAR_dx <- function(dat, ALDO.Dx = TRUE, HTN.Dx = TRUE, n.Dx = 10, EMPI_DATE_
     if(!is.null(logger)) logger$info("RAR_dx: only Dx with PATIENT_MASTER_CLASS = OUTPATIENT are selected")
   }
  
-  # get ALDO Dx's, in a higher level
-  if(ALDO.Dx){
-    # catch Hyperaldo in a higher level
-    tmp <- dat %>% 
-      filter(CODE_STANDARD_NAME == "ICD-10" & 
-                            grepl("^E26\\.*", CODE))
-    tmp <- dat %>% 
-      filter(CODE_STANDARD_NAME == "ICD9" & 
-                            grepl("^255\\.1", CODE)) %>% 
-      rbind(., tmp)
-    
-    ret %<>%
-      rbind(., tmp)
-  }
   
-  # get HTN Dx's, in a higher level
-  if(HTN.Dx){
-    tmp <- dat %>% 
-      filter(CODE_STANDARD_NAME == "ICD-10" & 
-                            grepl("^I1", CODE)) 
-    
-    tmp <- dat %>% filter(CODE_STANDARD_NAME == "ICD9" & 
-                            grepl("^40", CODE)) %>% 
-      rbind(., tmp)
-    
-    ret %<>%
-      rbind(., tmp)
-  }
+  # filter based on Selected Dx's
+  # CODE_Level = "Dx_h1"
+  # hierarchy_dx <- c("Essential_HTN", "Primary_aldosteronism")
+  icd_map <- icd_mapping(dx_hierarchy_level = CODE_Level, dx_hierarchy_level_value = hierarchy_dx)
   
-  if(n.Dx != 0){
-    top_dx_left <- dat %>% 
-      filter(!(CODE %in% unique(ret$CODE))) %>% 
-      group_by(CODE) %>%
-      summarise(N=n()) %>%
-      arrange(desc(N)) %>%
-      slice(., 1:n.Dx)
-    
-    ret <- dat %>% 
-      filter(CODE %in% top_dx_left$CODE) %>% 
-      rbind(., ret)
-  }
+  ret <- dat %>% filter(CODE %in% icd_map$CODE)
   
-  
-  # Create new HAR: HAR_NUMBER or EMPI + ENC Date
-  # ret$HAR <- ifelse(is.na(ret$HAR_NUMBER), 
-  #                       paste(ret$EMPI, format(ret$ENC_DATE, "%Y-%m-%d")),
-  #                       ret$HAR_NUMBER)
   
   # Create new ENC ID: EMPI_DATE
   # TODO: pull this out into function
   ret$EMPI_DATE <- paste(ret$EMPI, 
                          format(ret$ENC_DATE, "%Y-%m-%d"))
+  
+
+  empi_date_0 <- length(unique(ret$EMPI_DATE))
   
   if(EMPI_DATE_Level){
     # collapse into EMPI_DATE Level
@@ -603,11 +570,62 @@ sub_RAR_dx <- function(dat, ALDO.Dx = TRUE, HTN.Dx = TRUE, n.Dx = 10, EMPI_DATE_
     ## (2) DX_SEQUENCE minimal [first of arrange(DX_SEQUENCE), NA will be last]
     ## (3) First of arrange(desc(SOURCE_LAST_UPDATE_DATE), desc(COMMENTS)) [This will avoid "" in COMMENTS]
     
+  
     ret %<>% 
       group_by(EMPI_DATE, CODE) %>%
       arrange(desc(SOURCE_LAST_UPDATE_DATE), 
               desc(PRIMARY_YN), DX_SEQUENCE, desc(COMMENTS)) %>% # Pick Unique CODE for each EMPI_DATE (for now)
       slice(1)
+    
+    # remove unuseful information
+    ret %<>% 
+      select(-one_of(c('EMPI', 'CODE_STANDARD_NAME', 'COMMENTS', 'CODING_DATE', 'PRIMARY_YN', 'DX_SEQUENCE', 'DESCRIPTION', 'PK_DX_ID', 
+                       'SOURCE_LAST_UPDATE_DATE', 'ENC_DATE', 'PK_ENCOUNTER_ID', 'DX_TYPE', 'HAR_NUMBER')))
+    
+    
+    # spread in each Dx level
+    ret_icd <- ret %>% ungroup() %>% filter(!duplicated(.)) %>%
+                mutate(value = 1) %>%
+                spread(CODE, value, fill = 0, sep = "_")
+      
+    ret_h0 <- ret %>% left_join(., icd_map, by = "CODE") %>% ungroup() %>%
+                select(EMPI_DATE, Dx_h0) %>%
+                filter(!duplicated(.)) %>%
+                mutate(value = 1) %>% spread(Dx_h0, value, fill = 0, sep = "_")
+    
+    ret_h1 <- ret %>% left_join(., icd_map, by = "CODE") %>% ungroup() %>%
+      select(EMPI_DATE, Dx_h1) %>%
+      filter(!duplicated(.)) %>%
+      mutate(value = 1) %>% spread(Dx_h1, value, fill = 0, sep = "_")
+    
+    
+    # QC: check whether some EMPI_DATE got dropped
+    n0 <- length(unique(ret$EMPI_DATE))
+    n_icd <- length(unique(ret_icd$EMPI_DATE))
+    n_h0 <- length(unique(ret_h0$EMPI_DATE))
+    n_h1 <- length(unique(ret_h1$EMPI_DATE))
+    if(!(n0 == n_icd & n0 == n_icd & n0 == n_h0 & n0 == n_h1)){
+      logger$warn("sub_RAR_dx: some EMPI_DATE got dropped in converting Dx to higher levels")
+    }
+      
+    
+    ret <- full_join(ret_icd, ret_h0, by = "EMPI_DATE") %>%
+            full_join(., ret_h1, by = "EMPI_DATE")
+      
+      
+  }
+  
+  
+  empi_date_1 <- length(unique(ret$EMPI_DATE))
+  
+  
+  if(empi_date_0 != empi_date_1){
+    err_msg <- sprintf("sub_RAR_dx: missing EMPI_DATEs (Should be %d; Actually: %d)", empi_date_0, empi_date_1)
+    if(!is.null(logger)) logger$warn(err_msg)
+    warning(err_msg)
+  }else{
+    msg <- sprintf("sub_RAR_dx: all EMPI_DATEs are present (Number: %d)", empi_date_1)
+    if(!is.null(logger)) logger$warn(msg)
   }
   
   # TODO: If HAR_Level = FALSE, need to collapse into PK_ENCOUNTER_ID level
@@ -833,10 +851,11 @@ enc_to_pts <- function(rar_enc_level, enc_id = "EMPI_DATE", num_dx, sbp_bar = 14
   #   summarize(n_discordant_BP = sum(is.na(BP_SY)))
   # ....... is.na(BP_SYSTOLIC) & !is.na(BP_DIASTOLIC)
   
-  ## SBP_n, DBP_n, High_BP_n
+  ## SBP_n, DBP_n, High_BP_n, enc_n, encounter with bp
   pts %<>% 
     group_by(EMPI) %>% 
-    mutate(SBP_n = sum(BP_SYSTOLIC >= sbp_bar, na.rm = TRUE), 
+    mutate(enc_n = n(), enc_bp_n = sum(!is.na(BP_SYSTOLIC) & !is.na(BP_DIASTOLIC)),
+           SBP_n = sum(BP_SYSTOLIC >= sbp_bar, na.rm = TRUE), 
            DBP_n = sum(BP_DIASTOLIC >= dbp_bar, na.rm = TRUE),
            High_BP_n = sum(BP_SYSTOLIC >= sbp_bar | BP_DIASTOLIC >= dbp_bar, na.rm = TRUE),
            High_BP_prop = High_BP_n / sum(!is.na(BP_SYSTOLIC) & !is.na(BP_DIASTOLIC))) %>%
@@ -914,15 +933,19 @@ collapse_lab_EMPI_DATE <- function(dat){
   
   # For RAR use collapse_RAR_Lab function
   rar_lab <- subset(dat, Test %in% c("PRA", "DRC", "Aldo"))
-  rar_lab_collapse <- collapse_RAR_Lab(dat=rar_lab, EMPI_DATE_Level = TRUE)
-  
-  ## make some changes to rar_lab
-  rar_lab_collapse %<>% select(-c(PK_ENCOUNTER_ID, ORDER_START_DATE))
-  rar_lab_collapse$ENC_DATE <- as.Date(rar_lab_collapse$ENC_DATE)
-  
+  if(nrow(rar_lab) != 0){
+    rar_lab_collapse <- collapse_RAR_Lab(dat=rar_lab, EMPI_DATE_Level = TRUE)
+    
+    ## make some changes to rar_lab
+    rar_lab_collapse %<>% select(-c(PK_ENCOUNTER_ID, ORDER_START_DATE))
+    
+    
+  }
+ 
   # Other labs
   other_lab <- subset(dat, !(Test %in% c("PRA", "DRC", "Aldo")))
-  if(nrow(other_lab == 0)){
+
+  if(nrow(other_lab) == 0){
     ret <- rar_lab_collapse
     return(ret)
   }
@@ -933,14 +956,30 @@ collapse_lab_EMPI_DATE <- function(dat){
   r0 <- subset(other_lab, !(EMPI_DATE_RIC %in% dups$EMPI_DATE_RIC))
   r1 <- subset(other_lab, EMPI_DATE_RIC %in% dups$EMPI_DATE_RIC)
   
-  ## for r1 (multiple RIC in EMPI_DATE), pick by PK_ORDER_ID
-  ## TODO: Or use median? The reason to pick by PK_ORDER_ID is some tests could be paired
-  r1 %<>% group_by(EMPI_DATE_RIC) %>% arrange(desc(PK_ORDER_ID)) %>% slice(1)
+  ## for r1 (multiple RIC in EMPI_DATE), pick by 1) count of ORDER_START_DATE 2) arbitrary PK_ORDER_ID
+  ### same test at same time (but from different ORDER: LIVER FUNCTIONAL PANEL & CMP), so use median to combine
+  r1 %<>% group_by(EMPI_DATE_RIC, ORDER_START_DATE) %>% mutate_at(vars(RESULT_VALUE), funs(median(., na.rm=TRUE))) %>% slice(1)
+  
+  ### Pick by 1) count of ORDER_START_DATE 2) PK_ORDER_ID
+  r1$EMPI_DATE_OSD <- paste(r1$EMPI_DATE, r1$ORDER_START_DATE)
+  r1 <- r1 %>% group_by(EMPI_DATE_OSD) %>% summarize(N=n()) %>% ungroup() %>% full_join(., r1, by = "EMPI_DATE_OSD") %>% group_by(EMPI_DATE_RIC) %>% arrange(desc(N), desc(PK_ORDER_ID)) %>% slice(1)
+  
   
   ## combine r0 and r1 together
   other_lab_EMPI_DATE_RIC <- r0 %>% bind_rows(., r1)
   
-  ## Combine Unit of measure into Test name
+  ## Harmonize Units
+  ### Get a list for most used units for each RESULT_ITEM_CODE
+  RIC_units_select <- other_lab_EMPI_DATE_RIC %>% group_by(RESULT_ITEM_CODE, UNIT_OF_MEASURE) %>% summarise(N = n()) %>% arrange(desc(N)) %>% slice(1)
+  
+  ### add a column for filtering
+  other_lab_EMPI_DATE_RIC$RIC_units <- paste(other_lab_EMPI_DATE_RIC$RESULT_ITEM_CODE, other_lab_EMPI_DATE_RIC$UNIT_OF_MEASURE)
+  
+  ### filtering units
+  RIC_units_select$RIC_unit <- paste(RIC_units_select$RESULT_ITEM_CODE, RIC_units_select$UNIT_OF_MEASURE)
+  other_lab_EMPI_DATE_RIC %<>% filter(RIC_units %in% RIC_units_select$RIC_unit) %>% ungroup()
+  
+  ### put unit into Test
   other_lab_EMPI_DATE_RIC$Test <- paste(other_lab_EMPI_DATE_RIC$Test, other_lab_EMPI_DATE_RIC$UNIT_OF_MEASURE, sep = "_")
   
   ## remvoe cols
@@ -950,8 +989,8 @@ collapse_lab_EMPI_DATE <- function(dat){
   other_lab_EMPI_DATE <- other_lab_EMPI_DATE_RIC %>% spread(., key = Test, value = RESULT_VALUE, sep = "_")
   
   ## re-define EMPI and ENC_DATE
-  other_lab_EMPI_DATE$EMPI <- substr(other_lab_EMPI_DATE$EMPI_DATE, 1, 10)
-  other_lab_EMPI_DATE$ENC_DATE <- as.Date(substr(other_lab_EMPI_DATE$EMPI_DATE, 12, 21), format = "%Y-%m-%d")
+  # other_lab_EMPI_DATE$EMPI <- substr(other_lab_EMPI_DATE$EMPI_DATE, 1, 10)
+  # other_lab_EMPI_DATE$ENC_DATE <- as.Date(substr(other_lab_EMPI_DATE$EMPI_DATE, 12, 21), format = "%Y-%m-%d")
   
   # merge RAR and other labs
   ret <- full_join(rar_lab_collapse, other_lab_EMPI_DATE, by = "EMPI_DATE")
@@ -1119,7 +1158,7 @@ rar_merge <- function(rar_dx, rar_enc, rar_lab, rar_demo, id, pt_id = "EMPI", lo
   #' @param pt_id character Unique ID for patients. Default is EMPI
   #' @return rar_mg tibble The merged data set
   
-  
+
   ## drop some columns
   rar_enc %<>% 
     select(-one_of(c("E_SOURCE_LAST_UPDATE", "PK_ENCOUNTER_ID", "ENC_DATE")))
@@ -1133,16 +1172,10 @@ rar_merge <- function(rar_dx, rar_enc, rar_lab, rar_demo, id, pt_id = "EMPI", lo
   
   
   # get the number of Dx's
-  n_dx <- length(unique(rar_dx$CODE))
+  n_dx <- sum(grepl("^CODE|^Dx", names(rar_dx)))
   
   
-  # spread rar_dx
-  rar_dx %<>% 
-    mutate(value = 1) %>%
-    spread(CODE, value, fill = 0)
-  ## QC: check whether rar_dx has unique rows regarding to EMPI_DATE
-  ## length(unique(rar_dx$EMPI)) == dim(rar_dx)[1]
-  
+
   ## id <- "EMPI_DATE"
   
   ## Full Join: keep all info
@@ -1155,7 +1188,7 @@ rar_merge <- function(rar_dx, rar_enc, rar_lab, rar_demo, id, pt_id = "EMPI", lo
   # get the start and end col number for Dx codes in merged data set
   dx_code_start <- which(names(rar_mg) == id)[1] + 1
   dx_code_end <-  n_dx + dx_code_start - 1
-  num_dx <- dx_code_end - dx_code_start + 1
+
   ## For NA's in Dx, change them into 0
   rar_mg[, dx_code_start:dx_code_end] <- lapply(rar_mg[, dx_code_start:dx_code_end], 
                                                 function(x) { ifelse(is.na(x), 
@@ -1173,5 +1206,5 @@ rar_merge <- function(rar_dx, rar_enc, rar_lab, rar_demo, id, pt_id = "EMPI", lo
   rar_mg$Age <- ifelse(rar_mg$Age <= 0, 0, rar_mg$Age)
   
   
-  return(list(rar_mg=rar_mg, num_dx=num_dx))
+  return(list(rar_mg=rar_mg, num_dx=n_dx))
 }

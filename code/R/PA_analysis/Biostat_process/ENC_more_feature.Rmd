@@ -1,0 +1,125 @@
+---
+title: "Add more Features to Enc Data for Biostat"
+output: html_document
+---
+
+
+```{r}
+library(ini)
+config <- read.ini("~/repos/Daniel_Herman_Aldosterone_2017_03/code/R/PA_analysis/Biostat_process/config.ini")
+
+# set directory
+working_dir <- paste(config$Directories$repos_dir, config$Directories$working_dir_suffix, sep = "/")
+
+output_dir <- paste(config$Directories$repos_dir, config$Directories$output_dir_suffix, sep = "/")
+out_root <- config$RAR$out_root
+
+```
+
+
+```{r setup, include=FALSE, cache=TRUE, root.dir=working_dir}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = working_dir)
+setwd(working_dir)
+source("common_anal/RAR_fxns.R")
+
+```
+
+## Encounter
+Read in raw encounter and filter out only PATIENT_MASTER_CLASS == "OUTPATIENT"
+```{r load_enc, dependson=c("load_enc")}
+library(dplyr)
+library(data.table)
+library(tibble)
+suppressMessages(library(tidyr))
+
+colClasses <- c(ENC_DATE = "PDS_DateTime", E_SOURCE_LAST_UPDATE = 'PDS_DateTime', 
+                  EMPI = 'character', PK_ENCOUNTER_ID = 'character', 
+                  HAR_NUMBER = 'character', PATIENT_MASTER_CLASS = 'character', ADMIT_SOURCE = 'character', 
+                  ENCOUNTER_SUB_TYPE = 'character', 
+                  ROLE_ADMIT = 'character', DISCIPLINE_ADMIT = 'character', ENC_TYPE_CODE = 'character', 
+                  ENC_TYPE_MASTER_CODE = 'character', ENC_TYPE_MASTER_DESCRIPTION = 'character', 
+                  MASTER_LOCATION_CODE = 'character', MASTER_LOCATION_DESCRIPTION = 'character', 
+                  MASTER_LOCATION_FACILITY_YN = 'character', MASTER_LOCATION_CLINIC_YN = 'character',
+                  MASTER_LOCATION_ENTITY = 'character', SERVICE_MASTER_CODE = 'character', 
+                  SERVICE_MASTER_DESCRIPTION = 'character', 
+                  BP_SYSTOLIC = 'numeric', BP_DIASTOLIC = 'numeric')
+  
+  
+  
+rar_enc <- fread_epic(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_ENC.csv", colClasses = colClasses, logger = NULL)
+
+
+rar_enc %<>% 
+      filter(PATIENT_MASTER_CLASS == "OUTPATIENT")  
+nrow(rar_enc) # 2178870
+```
+
+Create new ENC ID: EMPI_DATE
+```{r, dependson=c("load_enc")}
+rar_enc$EMPI_DATE <- paste(rar_enc$EMPI, 
+                             format(rar_enc$ENC_DATE, "%Y-%m-%d"))
+length(unique(rar_enc$EMPI_DATE)) # 1298403 Unique EMPI_DATE <- Goal
+```
+Break rar_enc into two parts:
+```{r, dependson=c("load_enc")}
+dups <- unique(rar_enc[duplicated(rar_enc$EMPI_DATE), "EMPI_DATE"])
+
+r0 <- rar_enc %>% filter(!(EMPI_DATE %in% dups$EMPI_DATE))
+r1 <- rar_enc %>% filter(EMPI_DATE %in% dups$EMPI_DATE)
+```
+
+Deal with r1
+```{r, dependson=c("load_enc")}
+length(unique(r1$ENC_TYPE_MASTER_CODE)) # 133
+table(r1$ENC_TYPE_MASTER_DESCRIPTION)
+```
+
+Factorize part of ENC_TYPE_MASTER_CODE (Not perfect)
+```{r, dependson=c("load_enc")}
+r1$ENC_TYPE_MASTER_CODE <- factor(r1$ENC_TYPE_MASTER_CODE, levels = c("OFFICE VISIT", "LAB","SURGERY", "DAY SURG", "SURGERY, GENERAL","APPOINTMENT","ORDERS","CONSULT", "FORMS","LETTER","PHONE","SCAN - OLD RECORDS","HISTORY"))
+
+temp <- r1 %>% 
+      group_by(EMPI_DATE) %>%
+      arrange(ENC_TYPE_MASTER_CODE, desc(E_SOURCE_LAST_UPDATE)) %>%
+      mutate_at(vars(BP_SYSTOLIC:BP_DIASTOLIC), 
+                funs(median(., na.rm = FALSE))) %>%
+      slice(1) %>%
+      ungroup()
+length(unique(temp$ENC_DATE)) # 454554
+table(temp$ENC_TYPE_MASTER_CODE)
+```
+It seems that the specified 13 groups could distinguish all, unless some levels are needed inside this order.
+
+
+
+
+## Dx's
+Dx's for Obstructive Sleep Apnea
+```{r load_Dx, dependson=c("load_Dx")}
+rar_dx <- load_RAR_Dx()
+
+osa_9 <- rar_dx[grepl("^327.2", rar_dx$CODE), "CODE"]
+table(osa_9$CODE)
+
+```
+Additional?
+```{r, dependson=c("load_Dx")}
+osa_9a <- rar_dx[grepl("^780.5", rar_dx$CODE), "CODE"]
+table(osa_9a$CODE)
+```
+
+
+
+
+```{r, dependson=c("load_Dx")}
+osa_10 <- rar_dx[grepl("G47.3", rar_dx$CODE), "CODE"]
+table(osa_10$CODE)
+```
+
+Dx for Diabetes
+```{r, dependson=c("load_Dx")}
+diabetes_9 <- rar_dx[grepl("^250", rar_dx$CODE), "CODE"]
+table(diabetes_9$CODE)
+```
+
