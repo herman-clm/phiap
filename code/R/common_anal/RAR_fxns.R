@@ -672,12 +672,14 @@ load_RAR_PtDemo <- function(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_DEMO.
 
 
 
-load_Lab <- function(dat_file,  lab_source, adjust_up = 1.5, adjust_down = 0.5, logger = NULL){
+load_Lab <- function(dat_file,  lab_source, adjust_up = 1.5, adjust_down = 0.5, logger = NULL,
+                     allow_missing_columns=FALSE){
   #' Load in the Lab data, and do some basic cleaning. Lab data includes RAR_Lab and RAR_V3
   #' @param dat_file string Raw data text file location 
   #' @param lab_source character Lab test source: ALL or RAR
   #' @param adjust_up numeric Rate for adjusting "> X", default is 0.5
   #' @param adjust_donw numeric Rate for adjusting "< X", default is 1.5
+  #' @param allow_missing_columns Bool If true, then allow columns to be missing from specified colClasses. Only use for exploratory work
   #' @return rar_lab tibble pre-processed RAR Dx data
   
   # TODO: Not Finished.
@@ -709,6 +711,16 @@ load_Lab <- function(dat_file,  lab_source, adjust_up = 1.5, adjust_down = 0.5, 
     stop(err_msg)
   }
  
+  if (allow_missing_columns) { #Exclude columns not in dataset
+    data_columns <- read.csv(dat_file,nrows = 1, header = T) %>% names(.)
+    cols_to_exclude <- names(colClasses)[which(!names(colClasses) %in% data_columns)]
+    if(length(cols_to_exclude)) {
+      if(!is.null(logger)) logger$warn(paste("Excluding columns:", paste(cols_to_exclude, collapse=", ")))
+    
+      colClasses <- colClasses[which(names(colClasses) %in% data_columns)]
+    }
+  }
+  
   
   rar_lab <- fread_epic(dat_file = dat_file, colClasses = colClasses, logger = logger)
 
