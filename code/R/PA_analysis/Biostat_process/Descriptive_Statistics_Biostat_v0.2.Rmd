@@ -8,17 +8,115 @@ knitr::opts_chunk$set(echo = TRUE)
 
 suppressMessages(library(tidyverse))
 suppressMessages(library(ini))
+suppressMessages(library(ggplot2))
 ```
 
 
-```{r load_data, cache=TRUE}
+```{r load_data}
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, 
+                      message = FALSE, cache.lazy = FALSE)
 load("bios_data_enc_pts_v0.2.RData")
+load("bios_data_v0.2.RData")
+```
+
+List:
+* Minimal Validation
+    + Spot checking ~5 patients by their EMPI
+    + Randomly checking ~5 EMPI_DATE
+* Descriptive Statistics on all variables (min, max, mean, median), figures, find outliers
+* Correlations among Tests, Dx's (on diffefent levels), Tests & Dx's   
+* Descriptive statistics based on different groups (Dx's, Outcomes)
+* GLM/contigency table to detect significance in different categories regarding to Research DB outcome/Dx's
+    + Using Research DB outcome (now it's ```PA_AVS_tot_0115```)
+    + Using specific Dx codes (in CODE and Dx_h0, Dx_h1 level)
+* Basic regression models on Research DB outcome/Dx's
+* Simple machine learning models
+
+
+### Minimal Validation
+Select some EMPI_DATE with RAR tests. Also pick some random EMPI_DATE.
+```{r enc_w_RAR, eval=FALSE}
+rar_mg %>% filter(is.na(Aldo)+is.na(PRA)+is.na(DRC)==0) %>% 
+  print.data.frame()
+
+```
+Spot checked. *chart_review_bios_v2.txt*
+
+######### NOTE:
+According to data generation step, all EMPI_DATE in rar_enc are OUTPATIENT, and they are all included in rar_mg. Besides, there are a few more in rar_mg that are not OUTPATIENT [`r length(unique(setdiff(rar_mg$EMPI_DATE, rar_enc$EMPI_DATE)))` EMPI_DATE's]; these EMPI_DATE's are all from Labs. The reason for that is when joining labs and encounter data, a full join is used, and in labs data, we used all information there.
+
+
+### Patients
+There are `r length(unique(pts$EMPI))` patients (by EMPI). And the summary of total encounters.
+```{r pts_enc}
+summary(pts$enc_n)
+```
+The total encounters varies a lot from `r min(pts$enc_n)` to `r max(pts$enc_n)`.
+
+```{r enc_per_year, fig.width=20, fig.height=10}
+temp <- rar_mg %>% mutate(enc_year = format(ENC_DATE, "%Y")) %>%
+  group_by(EMPI, enc_year) %>%
+  summarise(N = n()) %>% ungroup() %>%
+  group_by(EMPI) %>%
+  mutate(tot_N = sum(N)) %>% ungroup()
+
+
+ggplot(temp, aes(x=enc_year, y=N, group=EMPI)) + geom_point(aes(alpha = tot_N)) + labs(x = "Encounter Year", y = "Total Encounters per Year", title = "Encounters Per Year Per Patient") + theme(plot.title = element_text(hjust = 0.5))
 
 ```
 
-List:   
-Descriptive Statistics on all variables (min, max, mean, median), figures   
-Correlations among Tests, Dx's (on diffefent levels), Tests & Dx's   
-Descriptive statistics based on different groups (Dx's, Outcomes)   
+Another way is to find total encounters vs length of encounters:
+```{r enc_vs_length, fig.width=20, fig.height=10}
+temp2 <- rar_mg %>% mutate(enc_year = as.numeric(format(ENC_DATE, "%Y"))) %>%
+  group_by(EMPI, enc_year) %>%
+  summarise(N = n()) %>% ungroup() %>%
+  group_by(EMPI) %>%
+  mutate(tot_N = sum(N), ENC_period = max(enc_year)-min(enc_year)) %>% 
+  slice(1) %>%
+  ungroup()
+
+ggplot(temp2, aes(x = ENC_period, y = N)) + geom_point() + labs(x="Enc History (Years)", y="Total Encounters", title="Total Encounters Per Patient vs Encounter History") + theme(plot.title = element_text(hjust = 0.5))
+
+```
+This figure shows that a very long Encounter history does not necessarily means a high total encounters.
+
+
+### ENCOUNTER Level
+All info here came from EPIC:
+```{r source_code}
+table(rar_mg$SOURCE_CODE)
+```
+Encounters with no Dx's:
+```{r no_dx}
+n_dx <- sum(grepl("^CODE|^Dx", names(rar_mg)))
+
+
+temp <- apply(rar_mg[,4:(4+n_dx - 1)], 1, sum)
+table(temp)
+```
+So it turns out that there are lots of ENC's which do not have any Dx's.  
+As for PA Dx's
+```{r no_pa_dx}
+rar_mg %>% select(Dx_h1_Primary_aldosteronism) %>% 
+  group_by(Dx_h1_Primary_aldosteronism) %>%
+  summarise(N=n())
+
+
+```
+This shows that only about 4400 ENC's that have PA Dx's.   
+For RAR(Aldo/PRC/DRA) tests, only 79 of ENC's have aldo/renin tests paired...
+```{r rar_lab}
+rar_mg %>% mutate(rar_missing = is.na(Aldo)+(is.na(DRC)|is.na(PRA))) %>%
+  group_by(rar_missing) %>%
+  summarise(N=n()) %>%
+  print.data.frame()
+```
+```{r rar_lab_summary}
+summary(rar_mg[,c("Aldo","DRC","PRA")])
+```
+
+```{r}
+ggplot(rar_mg, aes(rar_mg$PA_AVS_tot_0115,rar_mg$Aldo)) + geom_boxplot()
+```
 
 

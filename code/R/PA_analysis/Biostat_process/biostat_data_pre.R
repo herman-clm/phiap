@@ -113,7 +113,8 @@ rar_mg <- rar_merge(rar_dx = dx_all, rar_enc = rar_enc, rar_lab = lab_all, rar_d
 
 
 # Collapse into Patients' Level
-pts <- enc_to_pts(rar_enc_level = rar_mg$rar_mg, num_dx = rar_mg$num_dx)
+n_dx <- sum(grepl("^CODE|^Dx", names(dx_all)))
+pts <- enc_to_pts(rar_enc_level = rar_mg, num_dx = n_dx)
 
 
 ################    Adding Research Database
@@ -148,7 +149,7 @@ research_db <- AVS_pts %>% left_join(., empi, by = c("hosp_num" = "MRN"))
 PA_empi <- na.omit(unique(research_db$EMPI))
 
 
-rar_mg$rar_mg$PA_AVS_tot_0115 <- ifelse(rar_mg$rar_mg$EMPI %in% PA_empi, TRUE, FALSE)
+rar_mg$PA_AVS_tot_0115 <- ifelse(rar_mg$EMPI %in% PA_empi, TRUE, FALSE)
 pts$PA_AVS_tot_0115 <- ifelse(pts$EMPI %in% PA_empi, TRUE, FALSE)
 ###########   End of Research Database
 
@@ -168,7 +169,7 @@ save(rar_mg, pts, file = "PA_analysis/Biostat_process/bios_data_enc_pts_v0.2.RDa
 
 ## De-identify RAR- ENC Level
 
-enc_level <- deidentify(dat = rar_mg$rar_mg, primary_key = "EMPI_DATE", pt_id = "EMPI", mode = "create", 
+enc_level <- deidentify(dat = rar_mg, primary_key = "EMPI_DATE", pt_id = "EMPI", mode = "create", 
                         drop_cols = c("SOURCE_CODE", "PATIENT_MASTER_CLASS"), 
                         dt_cols = c("ENC_DATE", "BIRTH_DATE", "ORDER_START_DATE"),
                         out_file_for_mapping = paste(output_dir, 

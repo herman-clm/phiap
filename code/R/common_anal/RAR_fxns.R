@@ -1206,5 +1206,5 @@ rar_merge <- function(rar_dx, rar_enc, rar_lab, rar_demo, id, pt_id = "EMPI", lo
   rar_mg$Age <- ifelse(rar_mg$Age <= 0, 0, rar_mg$Age)
   
   
-  return(list(rar_mg=rar_mg, num_dx=n_dx))
+  return(rar_mg)
 }
