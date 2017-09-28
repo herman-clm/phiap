@@ -3,8 +3,8 @@ suppressMessages(library(data.table))
 suppressMessages(library(lubridate))
 suppressMessages(library(tidyr))
 
-
-source("common_anal/R_fxns.R")
+script.dir <- dirname(sys.frame(1)$ofile)
+source(paste(script.dir, "R_fxns.R", sep="/"))
 
 load_RAR <- function() {
   #' Load in the renin aldosterone, and other laboratory data
