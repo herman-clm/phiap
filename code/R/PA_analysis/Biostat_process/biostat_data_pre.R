@@ -171,9 +171,9 @@ save(rar_mg, pts, file = "PA_analysis/Biostat_process/bios_data_enc_pts_v0.2.RDa
 
 enc_level <- deidentify(dat = rar_mg, primary_key = "EMPI_DATE", pt_id = "EMPI", mode = "create", 
                         drop_cols = c("SOURCE_CODE", "PATIENT_MASTER_CLASS"), 
-                        dt_cols = c("ENC_DATE", "BIRTH_DATE", "ORDER_START_DATE"),
+                        dt_cols = c("ENC_DATE", "BIRTH_DATE"),
                         out_file_for_mapping = paste(output_dir, 
-                                                     paste(out_root, "de_id_enc_lv",Sys.Date(), "csv", sep="."),
+                                                     paste(out_root, "de_id_mapping_v0.2", "csv", sep="."),
                                                      sep="/"), 
                         seed = config$RAR$seed)
 
@@ -181,7 +181,7 @@ enc_level <- deidentify(dat = rar_mg, primary_key = "EMPI_DATE", pt_id = "EMPI",
 enc_level %<>% select(-BIRTH_DATE)
 
 ### reorder columns
-enc_level %<>% select(DE_PT_ID, DE_EMPI_DATE_ID, PA_AVS_tot_0115, ENC_DATE, ORDER_START_DATE, everything())
+enc_level %<>% select(DE_PT_ID, DE_primary_key, PA_AVS_tot_0115, ENC_DATE, everything())
 
 
 
@@ -190,7 +190,7 @@ pt_level <- deidentify(dat = pts, primary_key = NULL, pt_id = "EMPI", mode = "lo
                        drop_cols = c("SOURCE_CODE", "PATIENT_MASTER_CLASS", "EMPI_DATE", "ORDER_START_DATE", "ENC_DATE"), 
                        dt_cols = c("BIRTH_DATE"),
                        in_file_for_mapping = paste(output_dir, 
-                                                   paste(out_root, "de_id_enc_lv", "csv", sep="."),
+                                                   paste(out_root, "de_id_mapping_v0.2", "csv", sep="."),
                                                    sep="/"))
 
 pt_level %<>% select(-BIRTH_DATE)
@@ -201,19 +201,19 @@ pt_level %<>% select(DE_PT_ID, PA_AVS_tot_0115, everything())
 
 
 
-save(enc_level, pt_level, file = paste(output_dir, paste(out_root, "bios_data_deid", "RData", sep="."),
+save(enc_level, pt_level, file = paste(output_dir, paste(out_root, "bios_data_deid_v0.2", "RData", sep="."),
                                        sep="/"))
 
 # Write out resulting datasets
 write.csv(enc_level, 
           file = paste(output_dir, 
-                       paste(out_root, "enc_level", 
+                       paste(out_root, "de_enc_level_v0.2", 
                              Sys.Date(), "csv", sep="."),
                        sep="/"),
           row.names = FALSE)
 write.csv(pt_level, 
           file = paste(output_dir, 
-                       paste(out_root, "pt_level", 
+                       paste(out_root, "de_pt_level_v0.2", 
                              Sys.Date(), "csv", sep="."),
                        sep="/"),
           row.names = FALSE)

@@ -584,6 +584,7 @@ sub_RAR_dx <- function(dat, CODE_Level, hierarchy_dx,
     
     
     # spread in each Dx level
+    ## TODO: fill Dx_h0, Dx_h1 with sums, instead of 1/0
     ret_icd <- ret %>% ungroup() %>% filter(!duplicated(.)) %>%
                 mutate(value = 1) %>%
                 spread(CODE, value, fill = 0, sep = "_")
@@ -888,7 +889,8 @@ enc_to_pts <- function(rar_enc_level, enc_id = "EMPI_DATE", num_dx, sbp_bar = 14
   ## RAR
   pts %<>% 
     group_by(EMPI) %>% 
-    mutate(N_missing = recode(is.na(Aldo) + is.na(PRA) + is.na(DRC), `0` = 1, `1` = 1, `2` = 2, `3` = 3)) %>%   #0 & 1 to be equivalent LEVELS: (0,1), (2), (3)
+    mutate(N_missing = recode(is.na(Aldo) + is.na(PRA) + is.na(DRC), `0` = 1, `1` = 1, `2` = 2, `3` = 3)) %>%   #0 & 1 to be equivalent LEVELS: (0,1), (2), (3) 
+    ## TODO: 1) Aldo 2) PRA > DRC
     arrange(EMPI, N_missing, ENC_DATE) %>% 
     slice(1) %>%
     ungroup()
@@ -1220,3 +1222,7 @@ rar_merge <- function(rar_dx, rar_enc, rar_lab, rar_demo, id, pt_id = "EMPI", lo
   
   return(rar_mg)
 }
+
+# 
+# script.dir <- getSrcDirectory(rar_merge)
+# source(paste(script.dir, "R_fxns.R", sep="/"))

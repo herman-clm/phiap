@@ -1,0 +1,113 @@
+---
+title: "Time Cutpoint - v0.2"
+output: 
+  html_document:
+    fig_width: 20
+    fig_height: 10
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, autodep=TRUE)
+
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, 
+                      message = FALSE)
+
+suppressMessages(library(reshape2))
+suppressMessages(library(lubridate))
+suppressMessages(library(gridExtra))
+
+suppressMessages(library(tidyverse))
+suppressMessages(library(magrittr))
+suppressMessages(library(ini))
+suppressMessages(library(ggplot2))
+suppressMessages(library(kableExtra))
+suppressMessages(library(knitr))
+suppressMessages(library(lubridate))
+
+
+```
+
+
+```{r load_data, include=FALSE, cache=TRUE, cache.lazy=FALSE}
+load("bios_data_enc_pts_v0.2.RData")
+load("bios_data_v0.2.RData")
+```
+
+First remove some 40 enc's which are not outpatient from `rar_mg`
+```{r only_OUTPATIENT, cache.lazy=FALSE}
+tpp <- setdiff(rar_mg$EMPI_DATE, rar_enc$EMPI_DATE)
+rar_mg<- rar_mg %>% filter(!(EMPI_DATE %in% tpp))
+```
+
+
+Cumulative en
+```{r cumulative_enc}
+tmp <- rar_mg %>%
+  mutate(age_0 = abs(as.numeric(difftime(ENC_DATE, BIRTH_DATE, units="days"))) < 365,
+         Month = paste(year(ENC_DATE), month(ENC_DATE), sep="_"))
+
+tmp %>% 
+  group_by(Month) %>%
+  summarize(N=n(),
+            N_age_0 = sum(age_0, na.rm=T),
+            F_age_0 = N_age_0 / n())
+
+# tmp %>%
+#   group_by(ENC_DATE) %>%
+#   summarise(N=n()) %>%
+#   ggplot(.) + geom_point(aes(x=ENC_DATE, y=cumsum(N)/sum(N)))
+```
+
+```{r cumulative_enc_70_90}
+rar_enc %>% select(ENC_DATE) %>%
+  group_by(ENC_DATE) %>%
+  summarise(N=n()) %>%
+  ggplot(.) + geom_point(aes(x=ENC_DATE, y=cumsum(N)/sum(N))) + 
+  xlim(as.POSIXct(c("1970-01-01", "1999-01-01"))) +
+  ylim(0, 0.0015)
+
+```
+
+
+How many enc's ENC_DATE are same as BIRTH_DAY? and how do their data look like?
+```{r ENC_BIRTHDAY}
+summary(rar_mg %>% 
+  filter(ENC_DATE == BIRTH_DATE))
+```
+37. All the Lab, Dx are missing. So remove them also.
+
+```{r rm_ENC_at_BIRTH}
+rar_mg %<>% filter(ENC_DATE != BIRTH_DATE)
+```
+
+What is distribution of ENC_DATE - BIRTH_DATE (Age in rar_mg)?
+```{r dis_ENC_to_BIRTH}
+rar_mg %>% select(ENC_DATE, BIRTH_DATE, Age) %>%
+  mutate(Enc_Birth = (ENC_DATE - BIRTH_DATE)/24) %>%
+  ggplot(.) + geom_density(aes(Enc_Birth))
+```
+
+Encounter to Birthday: Before ENC year 1999
+```{r dis_ENC_to_BIRTH_before_1999}
+rar_mg %>% select(ENC_DATE, BIRTH_DATE, Age) %>%
+  filter(year(ENC_DATE) < 1990) %>%
+  mutate(ENC_to_Birth = (ENC_DATE - BIRTH_DATE)/24) %>%
+  ggplot(.) + geom_density(aes(Age))
+```
+this means for Encounters before 1999, most of them were under `r 1500/365` years old when an encouter occurred.  
+
+
+
+
+Now for those between 1970 - 1999:
+```{r details_enc, eval=FALSE}
+rar_mg %>% filter(ENC_DATE <= as.POSIXct("2000-01-01") & ENC_DATE >= as.POSIXct("1970-01-01"))
+```
+
+
+
+
+
+
+
+
