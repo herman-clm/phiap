@@ -41,9 +41,10 @@ load("bios_data_v0.2.1.RData")
 
 
 # Not Our Patients?
-```{r}
+```{r check_plt}
 ggplot(pts) + geom_histogram(aes(time_to_1st_RAR_yr))
 ggplot(pts) + geom_point(aes(x=(time_in_sys_yr*365.25), y = (time_to_1st_RAR_yr*365.25)), alpha=0.4)
+ggplot(pts) + geom_point(aes(x=(time_in_sys_yr*365.25), y = (time_to_1st_RAR_yr*365.25), colour=ifelse(enc_n > 10, 1, 2)), alpha=0.4) + xlim(0, 5000) + ylim(0, 5000)
 ```
 
 
