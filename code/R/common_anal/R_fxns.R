@@ -123,8 +123,8 @@ deidentify <- function(dat,
                        pt_id="EMPI", 
                        out_file_for_mapping=NULL, 
                        in_file_for_mapping=NULL,
-                       dt_cols=c(), 
-                       drop_cols=c(), 
+                       dt_cols=c(),
+                       drop_cols=c(),
                        logger = NULL) {
   #' This function is used to de-identify Patients' info, like EMPI, PK_PATIENT_ID, and Dates
   #' The function has two modes: 
@@ -167,6 +167,7 @@ deidentify <- function(dat,
    
     
     # Generate random DE_PT_ID and shift time for EMPI
+    # Note: shift is in seconds
     set.seed(seed)
     pt_id_ls <- tibble(DE_PT_ID = sample(x = length(pt_id_vec), size = length(pt_id_vec), replace = FALSE), 
                       shift = sample(x=-14:14, size = length(pt_id_vec), replace = TRUE)*60*60*24)
@@ -219,7 +220,7 @@ deidentify <- function(dat,
     tmp %<>% mutate_at(vars(dt_cols), funs(. + shift))
     if(!is.null(logger)) logger$info("deidentify: Specified Dates were shifted")
   }
-  
+
   
   
   # remove ID's and shift

@@ -527,40 +527,47 @@ load_RAR_Dx <- function(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_DX.csv", 
 sub_RAR_dx <- function(dat, CODE_Level, hierarchy_dx,
                        EMPI_DATE_Level = TRUE, outpatient_only = TRUE,
                        logger = NULL){
-  #' Getting the proper subset for Dx data
+  #' Getting a subset for Dx data, in a wide data set
   #' @param dat tibble Pre-processed RAR Dx data
-  #' @param CODE_Level character Specify on which level to pivot the Dx codes: "ICD", "Dx_h0", "Dx_h1", or "Dx_h2"
+  #' @param CODE_Level character Specify on which level to select the Dx codes: "ICD", "Dx_h0", "Dx_h1", or "Dx_h2"
   #' @param hierachy_dx vector A character vector that specifies Dx in corresponding hierarchy level
   #' @param EMPI_DATE_Level logit If TRUE, collapse data into EMPI_DATE Level. Default is TRUE
   #' @param outpatient_only logit If TRUE, only include Outpatients. Default is TRUE.
-  #' @return ret tibble The subset of cleaned Dx data
+  #' @return ret tibble A table for Dx's in ICD, Dx_h0, Dx_h1, Dx_h2 levels, and Dx counts for all EMPI_DATE (outpatient by default)
   
   ret <- tibble()  # return tibble
   spec_dx <- c() # specific dx's captured
   
-
+  dat$EMPI_DATE <-  paste(dat$EMPI, 
+                          format(dat$ENC_DATE, "%Y-%m-%d"))
+  
   if(outpatient_only){
     dat %<>% 
       filter(PATIENT_MASTER_CLASS == "OUTPATIENT")
     
     if(!is.null(logger)) logger$info("RAR_dx: only Dx with PATIENT_MASTER_CLASS = OUTPATIENT are selected")
   }
- 
+  
   
   # filter based on Selected Dx's
   # CODE_Level = "Dx_h1"
   # hierarchy_dx <- c("Essential_HTN", "Primary_aldosteronism")
   icd_map <- icd_mapping(dx_hierarchy_level = CODE_Level, dx_hierarchy_level_value = hierarchy_dx)
   
+  
+  
   ret <- dat %>% filter(CODE %in% icd_map$CODE)
   
+  # # Create new ENC ID: EMPI_DATE
+  # # TODO: pull this out into function
+  # ret$EMPI_DATE <- paste(ret$EMPI, 
+  #                        format(ret$ENC_DATE, "%Y-%m-%d"))
   
-  # Create new ENC ID: EMPI_DATE
-  # TODO: pull this out into function
-  ret$EMPI_DATE <- paste(ret$EMPI, 
-                         format(ret$ENC_DATE, "%Y-%m-%d"))
+  # Add number of Dx's for each encounter (EMPI_DATE) at the very beginning
+  Dx_ct <- dat %>% 
+    group_by(EMPI_DATE) %>%
+    summarise(n_Dx_enc = n_distinct(CODE))
   
-
   empi_date_0 <- length(unique(ret$EMPI_DATE))
   
   if(EMPI_DATE_Level){
@@ -570,7 +577,7 @@ sub_RAR_dx <- function(dat, CODE_Level, hierarchy_dx,
     ## (2) DX_SEQUENCE minimal [first of arrange(DX_SEQUENCE), NA will be last]
     ## (3) First of arrange(desc(SOURCE_LAST_UPDATE_DATE), desc(COMMENTS)) [This will avoid "" in COMMENTS]
     
-  
+
     ret %<>% 
       group_by(EMPI_DATE, CODE) %>%
       arrange(desc(SOURCE_LAST_UPDATE_DATE), 
@@ -582,22 +589,39 @@ sub_RAR_dx <- function(dat, CODE_Level, hierarchy_dx,
       select(-one_of(c('EMPI', 'CODE_STANDARD_NAME', 'COMMENTS', 'CODING_DATE', 'PRIMARY_YN', 'DX_SEQUENCE', 'DESCRIPTION', 'PK_DX_ID', 
                        'SOURCE_LAST_UPDATE_DATE', 'ENC_DATE', 'PK_ENCOUNTER_ID', 'DX_TYPE', 'HAR_NUMBER')))
     
-    
     # spread in each Dx level
-    ## TODO: fill Dx_h0, Dx_h1 with sums, instead of 1/0
-    ret_icd <- ret %>% ungroup() %>% filter(!duplicated(.)) %>%
-                mutate(value = 1) %>%
-                spread(CODE, value, fill = 0, sep = "_")
-      
-    ret_h0 <- ret %>% left_join(., icd_map, by = "CODE") %>% ungroup() %>%
-                select(EMPI_DATE, Dx_h0) %>%
-                filter(!duplicated(.)) %>%
-                mutate(value = 1) %>% spread(Dx_h0, value, fill = 0, sep = "_")
-    
-    ret_h1 <- ret %>% left_join(., icd_map, by = "CODE") %>% ungroup() %>%
-      select(EMPI_DATE, Dx_h1) %>%
+    ## fill Dx_h0, Dx_h1, Dx_h2 with sums, instead of 1/0
+    ret_icd <- ret %>% ungroup() %>% 
       filter(!duplicated(.)) %>%
-      mutate(value = 1) %>% spread(Dx_h1, value, fill = 0, sep = "_")
+      mutate(value = 1) %>%
+      spread(CODE, value, fill = 0, sep = "_")
+    
+    ## NOTE: since there are redundency in icd mapping (like 401.9 to Dx_h2 I10/I16), only the first Dx_h will be selected here and the following:
+    ret_h0 <- ret %>% left_join(., icd_map %>% select(CODE, Dx_h0) %>% group_by(CODE) %>% arrange(Dx_h0) %>% slice(1), by = "CODE") %>% 
+      ungroup() %>%
+      select(EMPI_DATE, Dx_h0) %>%
+      group_by(EMPI_DATE, Dx_h0) %>%
+      summarise(N=n()) %>%
+      ungroup() %>%
+      spread(Dx_h0, N, fill = 0, sep = "_")
+    
+    ## See NOTE above
+    ret_h1 <- ret %>% left_join(., icd_map %>% select(CODE, Dx_h1) %>% group_by(CODE) %>% arrange(Dx_h1) %>% slice(1), by = "CODE") %>% 
+      ungroup() %>%
+      select(EMPI_DATE, Dx_h1) %>%
+      group_by(EMPI_DATE, Dx_h1) %>%
+      summarise(N=n()) %>%
+      ungroup() %>%
+      spread(Dx_h1, N, fill = 0, sep = "_")
+    
+    ## See NOTE above
+    ret_h2 <- ret %>% left_join(., icd_map %>% select(CODE, Dx_h2) %>% group_by(CODE) %>% arrange(Dx_h2) %>% slice(1), by = "CODE") %>% 
+      ungroup() %>%
+      select(EMPI_DATE, Dx_h2) %>%
+      group_by(EMPI_DATE, Dx_h2) %>%
+      summarise(N=n()) %>%
+      ungroup() %>%
+      spread(Dx_h2, N, fill = 0, sep = "_")
     
     
     # QC: check whether some EMPI_DATE got dropped
@@ -605,15 +629,17 @@ sub_RAR_dx <- function(dat, CODE_Level, hierarchy_dx,
     n_icd <- length(unique(ret_icd$EMPI_DATE))
     n_h0 <- length(unique(ret_h0$EMPI_DATE))
     n_h1 <- length(unique(ret_h1$EMPI_DATE))
-    if(!(n0 == n_icd & n0 == n_icd & n0 == n_h0 & n0 == n_h1)){
+    n_h2 <- length(unique(ret_h2$EMPI_DATE))
+    if(!(n0 == n_icd & n0 == n_icd & n0 == n_h0 & n0 == n_h1 & n0 == n_h2)){
       logger$warn("sub_RAR_dx: some EMPI_DATE got dropped in converting Dx to higher levels")
     }
-      
+    
     
     ret <- full_join(ret_icd, ret_h0, by = "EMPI_DATE") %>%
-            full_join(., ret_h1, by = "EMPI_DATE")
-      
-      
+      full_join(., ret_h1, by = "EMPI_DATE") %>%
+      full_join(., ret_h2, by = "EMPI_DATE")
+    
+    
   }
   
   
@@ -628,6 +654,11 @@ sub_RAR_dx <- function(dat, CODE_Level, hierarchy_dx,
     msg <- sprintf("sub_RAR_dx: all EMPI_DATEs are present (Number: %d)", empi_date_1)
     if(!is.null(logger)) logger$warn(msg)
   }
+  
+  
+  # Add dx counts in, put NA as 0
+  ret %<>% full_join(., Dx_ct, by="EMPI_DATE")
+  ret[is.na(ret)] <- 0
   
   # TODO: If HAR_Level = FALSE, need to collapse into PK_ENCOUNTER_ID level
   return(ret)
@@ -826,6 +857,7 @@ clean_Lab <- function(dat, RAR_only = TRUE, potassium_in = TRUE, num_labs = 0, l
     ret <- dat %>% filter(RESULT_ITEM_CODE %in% ric_lt$RESULT_ITEM_CODE) %>%
       mutate(Test = RESULT_ITEM_CODE) %>%
       bind_rows(., ret)
+    
   }
   
   
@@ -839,66 +871,6 @@ clean_Lab <- function(dat, RAR_only = TRUE, potassium_in = TRUE, num_labs = 0, l
 
 
 
-
-
-
-
-
-
-enc_to_pts <- function(rar_enc_level, enc_id = "EMPI_DATE", num_dx, sbp_bar = 140, dbp_bar = 90, logger = NULL){
-  #' This function is used to collapse encounter level data into patient level data. It deals with Dx's, Labs, Vitals
-  #' @param rar_enc_level tibble Encounter level data set, with Dx's, Labs, Vitals for each encounter (may be missing)
-  #' @param enc_id character Unique id for enc level data
-  #' @param num_dx numeric Number of Dx codes
-  #' @param sbp_bar numeric Systolic blood pressure criteria for high blood pressure
-  #' @param dbp_bar numeric Diastolic blood pressure criteria for high blood pressure
-  #' @return pts tibble Patient level data set, with aggregated Dx, Labs, Vitals for each patient
-  
-  
-  # Collapse into Patients' Level
-  pts <- rar_enc_level
-  
-  # ADD assert statment to confirm that there are no SBPs without DBPs and vice-a-versa
-  # rar_enc_level %>%
-  #   group_by(EMPI) %>%
-  #   summarize(n_discordant_BP = sum(is.na(BP_SY)))
-  # ....... is.na(BP_SYSTOLIC) & !is.na(BP_DIASTOLIC)
-  
-  ## SBP_n, DBP_n, High_BP_n, enc_n, encounter with bp
-  pts %<>% 
-    group_by(EMPI) %>% 
-    mutate(enc_n = n(), enc_bp_n = sum(!is.na(BP_SYSTOLIC) & !is.na(BP_DIASTOLIC)),
-           SBP_n = sum(BP_SYSTOLIC >= sbp_bar, na.rm = TRUE), 
-           DBP_n = sum(BP_DIASTOLIC >= dbp_bar, na.rm = TRUE),
-           High_BP_n = sum(BP_SYSTOLIC >= sbp_bar | BP_DIASTOLIC >= dbp_bar, na.rm = TRUE),
-           High_BP_prop = High_BP_n / sum(!is.na(BP_SYSTOLIC) & !is.na(BP_DIASTOLIC))) %>%
-    ungroup() 
-  
-  # get the start and end col number for Dx codes in merged data set
-  dx_code_start <- which(names(rar_enc_level) == enc_id)[1] + 1
-  dx_code_end <- dx_code_start + num_dx - 1
-  
-  
-  ## Dx's
-  pts %<>% 
-    group_by(EMPI) %>%
-    mutate_at(vars(dx_code_start:dx_code_end), 
-              funs(sum)) %>%
-    ungroup()
-  
-  ## RAR
-  pts %<>% 
-    group_by(EMPI) %>% 
-    mutate(N_missing = recode(is.na(Aldo) + is.na(PRA) + is.na(DRC), `0` = 1, `1` = 1, `2` = 2, `3` = 3)) %>%   #0 & 1 to be equivalent LEVELS: (0,1), (2), (3) 
-    ## TODO: 1) Aldo 2) PRA > DRC
-    arrange(EMPI, N_missing, ENC_DATE) %>% 
-    slice(1) %>%
-    ungroup()
-  
-  pts %<>% select(-c(BP_SYSTOLIC, BP_DIASTOLIC, N_missing))
-  
-  return(pts)
-}
 
 
 collapse_lab_PK_ORDER_ID_RIC <- function(dat){
@@ -1008,6 +980,9 @@ collapse_lab_EMPI_DATE <- function(dat){
   
   # merge RAR and other labs
   ret <- full_join(rar_lab_collapse, other_lab_EMPI_DATE, by = "EMPI_DATE")
+ 
+  # replace space in names with "_"
+  names(ret) <- gsub(" ", "_", names(ret))
   
   return(ret)
 }
@@ -1161,24 +1136,29 @@ clean_RAR <- function(dat, blood_only=TRUE){
 }
 
 
-rar_merge <- function(rar_dx, rar_enc, rar_lab, rar_demo, id, pt_id = "EMPI", logger = NULL){
+rar_merge <- function(rar_dx, rar_enc, rar_lab, rar_demo, id, pt_id = "EMPI",
+                      begin_time = as.Date("1997-01-01"),
+                      join_to_ENC=TRUE, logger = NULL){
   #' This function is used to load in rar_enc,rar_dx, rar_lab, rar_demo data sets and merge them together
-  #' for a encounter level data set
+  #' for a encounter level data set, so all data sets are merged to encounter data
   #' @param rar_dx tibble Diagnosis data set
   #' @param rar_enc tibble Encounter data set
   #' @param rar_lab tibble Lab tests data set
   #' @param rar_demo tibble Patients' demographic data set
   #' @param id character Unique ID to merge the 4 data sets together
   #' @param pt_id character Unique ID for patients. Default is EMPI
+  #' @param begin_time POSIXct Time cutpoint for encounters. Default if 1997-01-01
+  #' @param join_to_ENC logit If FALSE, keep all info from all data sets. 
+  #' Default is TRUE, and every other data sets were merged to Encounter data set.
   #' @return rar_mg tibble The merged data set
   
 
   ## drop some columns
   rar_enc %<>% 
-    select(-one_of(c("E_SOURCE_LAST_UPDATE", "PK_ENCOUNTER_ID", "ENC_DATE")))
+    select(-one_of(c("E_SOURCE_LAST_UPDATE", "PK_ENCOUNTER_ID", "ENC_DATE", 'HAR_NUMBER')))
   rar_dx %<>% 
     select(-one_of(c('EMPI', 'CODE_STANDARD_NAME', 'COMMENTS', 'CODING_DATE', 'PRIMARY_YN', 'DX_SEQUENCE', 'DESCRIPTION', 'PK_DX_ID', 
-              'SOURCE_LAST_UPDATE_DATE', 'ENC_DATE', 'PK_ENCOUNTER_ID', 'DX_TYPE', 'HAR_NUMBER')))
+              'SOURCE_LAST_UPDATE_DATE', 'ENC_DATE', 'PK_ENCOUNTER_ID', 'DX_TYPE', 'HAR_NUMBER','PATIENT_MASTER_CLASS')))
   rar_lab %<>% 
     select(-one_of(c('EMPI', 'PK_ENCOUNTER_ID', 'ENC_DATE')))
   rar_demo %<>% select(-one_of(c('PK_PATIENT_ID')))
@@ -1192,19 +1172,25 @@ rar_merge <- function(rar_dx, rar_enc, rar_lab, rar_demo, id, pt_id = "EMPI", lo
 
   ## id <- "EMPI_DATE"
   
-  ## Full Join: keep all info
-  rar_mg <- rar_dx %>% 
-    full_join(., rar_enc, by = id) %>% 
-    full_join(., rar_lab, by = id) %>% 
-    full_join(., rar_demo, by = pt_id)
+  ## Join
+  if(join_to_ENC){
+    rar_mg <- rar_enc %>%
+      left_join(., rar_dx, by = id) %>%
+      left_join(., rar_lab, by = id) %>%
+      left_join(., rar_demo, by = pt_id)
+  }else{
+    rar_mg <- rar_dx %>% 
+      full_join(., rar_enc, by = id) %>% 
+      full_join(., rar_lab, by = id) %>% 
+      full_join(., rar_demo, by = pt_id)
+  }
   
   
-  # get the start and end col number for Dx codes in merged data set
-  dx_code_start <- which(names(rar_mg) == id)[1] + 1
-  dx_code_end <-  n_dx + dx_code_start - 1
+  # get a vector of indicators for Dx codes in merged data set
+  icd_cols <- grepl("^CODE", names(rar_mg))
 
   ## For NA's in Dx, change them into 0
-  rar_mg[, dx_code_start:dx_code_end] <- lapply(rar_mg[, dx_code_start:dx_code_end], 
+  rar_mg[, names(rar_mg)[icd_cols]] <- lapply(rar_mg[, names(rar_mg)[icd_cols]], 
                                                 function(x) { ifelse(is.na(x), 
                                                                      0, 
                                                                      x) })
@@ -1216,13 +1202,209 @@ rar_merge <- function(rar_dx, rar_enc, rar_lab, rar_demo, id, pt_id = "EMPI", lo
                                 format = "%Y-%m-%d")
   rar_mg$Age <- floor(as.numeric(rar_mg$ENC_DATE - rar_mg$BIRTH_DATE)/(3600 * 24 * 365.25))
   
-  # TODO: add a log for Age of -1
+  # Age of -1 => 0
   rar_mg$Age <- ifelse(rar_mg$Age <= 0, 0, rar_mg$Age)
+  
+  
+  # Add Time in System for that encounter
+  rar_mg %<>% group_by(EMPI) %>%
+    mutate(ENC_Time_in_Sys_days = as.numeric(difftime(ENC_DATE, min(ENC_DATE), units="days")))
+  
+  
+  # Apply time cutpoint
+  rar_mg %<>% filter(ENC_DATE >= begin_time)
   
   
   return(rar_mg)
 }
 
-# 
-# script.dir <- getSrcDirectory(rar_merge)
-# source(paste(script.dir, "R_fxns.R", sep="/"))
+
+
+
+enc_to_pts <- function(rar_enc_level, sbp_lower_limit = 140, dbp_lower_limit = 90, 
+                       lab_time_window = 14, logger = NULL){
+  #' This function is used to collapse encounter level data into patient level data. It deals with Dx's, Labs, Vitals
+  #' @param rar_enc_level tibble Encounter level data set, with Dx's, Labs, Vitals for each encounter (may be missing)
+  #' @param sbp_lower_limit numeric Systolic blood pressure criteria for high blood pressure
+  #' @param dbp_lower_limit numeric Diastolic blood pressure criteria for high blood pressure
+  #' @param lab_time_window numeric A time window for selecting labs
+  #' @return pts tibble Patient level data set, with aggregated Dx, Labs, Vitals for each patient
+  
+  
+  enc <- rar_enc_level %>% ungroup()
+  
+  # Add demo's
+  demo <- enc %>% 
+    select(EMPI, GENDER_MASTER_CODE, BIRTH_DATE, RACE_MASTER_CODE, RACE_MASTER_HISPANIC_YN) %>%
+    group_by(EMPI) %>%
+    slice(1)
+  
+  pts <- demo
+  
+  
+  # SBP_n, DBP_n, High_BP_n, enc_n, encounter with bp
+  BP_sum <- enc %>% 
+    group_by(EMPI) %>% 
+    summarize(enc_n = n(), 
+              enc_bp_n = sum(!is.na(BP_SYSTOLIC) & !is.na(BP_DIASTOLIC)),
+              sbp_n = sum(BP_SYSTOLIC >= sbp_lower_limit, na.rm = TRUE), 
+              dbp_n = sum(BP_DIASTOLIC >= dbp_lower_limit, na.rm = TRUE),
+              high_BP_n = sum(BP_SYSTOLIC >= sbp_lower_limit | BP_DIASTOLIC >= dbp_lower_limit, na.rm = TRUE),
+              high_BP_prop = high_BP_n / enc_bp_n, 
+              first_ENC_DATE = min(ENC_DATE), 
+              time_in_sys_yr = max(ENC_Time_in_Sys_days/365.25)) %>%
+    ungroup() 
+  
+  pts %<>% full_join(., BP_sum, by="EMPI")
+  
+  # Add Time to 1st RAR Tests, Time to first Hyperaldo dx
+  time_to_sum <- enc %>% 
+    mutate(mask_RAR_test = !is.na(Aldo) | !is.na(PRA) | !is.na(DRC)) %>%
+    group_by(EMPI) %>%
+    summarize(time_to_1st_RAR_yr = min(ENC_Time_in_Sys_days[ which(mask_RAR_test) ])/365.25,
+              time_to_1st_hyperaldo_dx_yr = min(ENC_Time_in_Sys_days[which(Dx_h0_Hyperaldo > 0)])/365.25) %>%
+    ungroup() %>%
+    mutate_all(funs(replace(., is.infinite(.), NA)))
+  
+  
+  pts %<>% full_join(., time_to_sum, by="EMPI")
+  
+  
+  # Add Primary Loc/ENTITY
+  pri_ENTITY_sum <- enc %>%
+    group_by(EMPI, MASTER_LOCATION_ENTITY) %>%
+    summarise(N = n()) %>%
+    slice(which.max(N)) %>%
+    select(EMPI, pri_entity=MASTER_LOCATION_ENTITY) %>% ungroup()
+  pri_loc_sum <- enc %>%
+    group_by(EMPI, MASTER_LOCATION_DESCRIPTION) %>%
+    summarise(N = n()) %>%
+    slice(which.max(N)) %>%
+    select(EMPI, pri_loc=MASTER_LOCATION_DESCRIPTION) %>% ungroup()
+  
+  pts %<>% full_join(., pri_ENTITY_sum, by="EMPI") %>%
+    full_join(., pri_loc_sum, by="EMPI")
+  
+  
+  
+  # Add RAR Tests, RAR_Loc/ENTITY
+  ## RAR
+  rar_sum <- enc %>%
+    select(EMPI, Aldo, PRA, DRC, ENC_DATE, MASTER_LOCATION_ENTITY, MASTER_LOCATION_DESCRIPTION) %>%
+    # Prioritize: 1) Aldo 2) PRA > DRC
+    filter(!(is.na(Aldo) & is.na(PRA) & is.na(DRC))) %>%
+    mutate(rar_priority = case_when(!is.na(Aldo) & !is.na(PRA) ~ 1, 
+                                    !is.na(Aldo) & !is.na(DRC) ~ 2,
+                                    !is.na(Aldo) ~ 3,
+                                    !is.na(PRA) | !is.na(DRC) ~ 4,
+                                    TRUE ~ 9)) %>%
+    group_by(EMPI) %>% 
+    arrange(rar_priority, ENC_DATE) %>% 
+    slice(1) %>%
+    ungroup() %>%
+    select(-rar_priority) %>%
+    rename(RAR_DATE = ENC_DATE, rar_entity = MASTER_LOCATION_ENTITY, rar_loc = MASTER_LOCATION_DESCRIPTION)
+  
+  
+  pts %<>% 
+    full_join(., rar_sum, by="EMPI")
+  
+  
+  # Add a RAR_DATE time stamp into enc
+  enc %<>% 
+    full_join(., 
+              rar_sum[,c("EMPI", "RAR_DATE")], by="EMPI")
+  
+  
+  
+  
+  
+  # Add number of RAR tests
+  n_rar_sum <- enc %>% filter(!is.na(Aldo) | !is.na(PRA) | !is.na(DRC)) %>%
+    group_by(EMPI) %>%
+    summarise(RAR_tests_n = n()) %>%
+    ungroup()
+  
+  pts %<>% full_join(., n_rar_sum, by="EMPI") %>%
+    mutate(RAR_tests_n = ifelse(is.na(RAR_tests_n), 0, RAR_tests_n))
+  
+  
+  # Add SBP/DBP
+  ## select bp closest to RAR_DATE & within day window (default is 14 days)
+  ## NOTE: by default of 14 days, 5929 missing; use 30 days, 5317 missing
+  ## Only BP prior to RAR_DATE: 2995 missing
+  ## BP Prior + 7 days after: 2956 missing
+  bp_sum <- enc %>% 
+    select(EMPI, BP_DIASTOLIC, BP_SYSTOLIC, ENC_DATE, RAR_DATE) %>%
+    mutate(time_to_RAR = as.numeric(difftime(ENC_DATE, RAR_DATE, units="days")),
+           BP_from_past = time_to_RAR <= 0,
+           time_to_RAR_abs = abs(time_to_RAR)) %>%
+    filter(time_to_RAR > -365 & time_to_RAR <= 7) %>%
+    #mutate(priority_time = ifelse(time_to_RAR > 0, time_to_RAR - 10000, time_to_RAR)) %>%
+    mutate(priority_BP = case_when(!is.na(BP_SYSTOLIC) & !is.na(BP_DIASTOLIC) ~ 0,
+                                   !is.na(BP_DIASTOLIC) | is.na(BP_SYSTOLIC) ~ 1,
+                                   TRUE ~ 4)) %>%
+    group_by(EMPI) %>%
+    arrange(priority_BP,
+            desc(BP_from_past),
+            time_to_RAR_abs) %>%
+    slice(1) %>%
+    ungroup() %>%
+    select(EMPI, bp_ENC_DATE=ENC_DATE, dbp=BP_DIASTOLIC, sbp=BP_SYSTOLIC)
+  
+  pts %<>% full_join(., bp_sum, by="EMPI")
+  
+  # Add Labs
+  lab_cols <- grepl("^Test", names(enc))
+  lab_sum <- enc %>% 
+    select(EMPI, ENC_DATE, RAR_DATE, names(enc)[lab_cols]) %>%
+    mutate(time_to_RAR = abs(as.numeric(difftime(ENC_DATE, RAR_DATE, units="days")))) %>%
+    filter(time_to_RAR <= lab_time_window) %>%
+    ungroup() %>%
+    mutate(labs_n = rowSums(!is.na(.[names(enc)[lab_cols]]))) %>%
+    group_by(EMPI) %>%
+    arrange(desc(labs_n),  abs(time_to_RAR)) %>%
+    mutate_at(vars(names(enc)[lab_cols]), funs(na.omit(.)[1] )) %>%
+    slice(1) %>%
+    ungroup() %>%
+    select(-c(time_to_RAR, labs_n, ENC_DATE, RAR_DATE))
+  
+  
+  pts %<>% full_join(., lab_sum, by="EMPI")
+  
+  
+  # Add Dx's
+  ## Count
+  icd_col <- grepl("^CODE|^Dx_h", names(enc))
+  dx_sum <- enc %>% 
+    select(names(enc)[icd_col], EMPI) %>%
+    group_by(EMPI) %>%
+    summarise_at(vars(names(enc)[icd_col]), 
+                 funs(n=sum(., na.rm=TRUE))) %>%
+    ungroup()
+  
+  ## Normalized Count
+  dx_h_col <- names(enc)[grepl("^Dx_h", names(enc))]
+  dx_sum_norm <- enc %>% 
+    select(dx_h_col, EMPI, n_Dx_enc) %>%
+    group_by(EMPI) %>%
+    summarise_at(vars(dx_h_col), funs(normlized_n=sum(., na.rm=TRUE)/sum(n_Dx_enc, na.rm=TRUE))) %>%
+    ungroup()
+  
+  
+  ## total Dx's
+  n_Dx <- enc %>% 
+    select(n_Dx_enc, EMPI) %>%
+    group_by(EMPI) %>%
+    summarise(Dx_n = sum(n_Dx_enc, na.rm=TRUE)) %>%
+    ungroup()
+  
+  pts %<>% 
+    full_join(., n_Dx, by="EMPI") %>%
+    full_join(., dx_sum, by="EMPI") %>%
+    full_join(., dx_sum_norm, by="EMPI")
+    
+  
+
+    return(pts)
+}
