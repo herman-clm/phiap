@@ -209,6 +209,7 @@ pt_level %<>% select(DE_PT_ID, PA_AVS_tot_0115, everything())
 save(enc_level, pt_level, file = paste(output_dir, paste(out_root, "bios_data_deid_v0.2.1", "RData", sep="."),
                                        sep="/"))
 
+
 # Write out resulting datasets
 write.csv(enc_level, 
           file = paste(output_dir, 
