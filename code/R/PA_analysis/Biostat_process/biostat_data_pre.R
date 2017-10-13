@@ -53,6 +53,8 @@ source("common_anal/RAR_fxns.R")
 # 
 # main(commandArgs(trailingOnly = TRUE))
 
+# specify left-censoring date
+left_censor_date <- as.Date("1997-01-01")
 
 
 ## HERMANDA_RAR_PTS_ENC.csv
@@ -68,7 +70,7 @@ rar_enc <- load_RAR_enc(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_ENC.csv",
 dx_all <- load_RAR_Dx()
 dx_all <- sub_RAR_dx(dat=dx_all, CODE_Level = "Dx_h0", 
                      hierarchy_dx = c("Hyperaldo", "HTN", "Diabetes", "Sleep_Apnea"), 
-                     EMPI_DATE_Level = TRUE,
+                     EMPI_DATE_Level = TRUE, left_censor_date = left_censor_date,
                     outpatient_only = TRUE)
 
 
@@ -83,6 +85,7 @@ rar_demo <- load_RAR_PtDemo()
 
 ## HERMANDA_RAR_PTS_LABS.csv
 lab_raw <- load_Lab(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_LABS.csv", lab_source = "ALL",
+                    left_censor_date = left_censor_date,
                     adjust_up = 1.5, adjust_down = 0.5)
 
 
@@ -108,7 +111,7 @@ lab_all <- collapse_lab_EMPI_DATE(lab_PK_ORDER_ID_RIC)
 # load("/data/processed_data/RAR/bios_data_v0.2.1.RData")
 # Merge all files
 rar_mg <- rar_merge(rar_dx = dx_all, rar_enc = rar_enc, rar_lab = lab_all, rar_demo = rar_demo, 
-                  id = "EMPI_DATE", pt_id = "EMPI", begin_time = as.Date("1997-01-01"),
+                  id = "EMPI_DATE", pt_id = "EMPI", left_censor_date = left_censor_date,
                   join_to_ENC=TRUE)
 
 
@@ -156,14 +159,6 @@ pts %<>% select(PA_AVS_tot_0115, everything())
 ###########   End of Research Database
 
 save(rar_mg, pts, file = "PA_analysis/Biostat_process/bios_data_enc_pts_v0.2.1.RData")
-
-
-
-
-
-
-
-
 
 
 
@@ -221,4 +216,5 @@ write.csv(pt_level,
                        paste(out_root, "de_pt_level_v0.2.1", "csv", sep="."),
                        sep="/"),
           row.names = FALSE)
+
 

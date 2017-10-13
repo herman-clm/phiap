@@ -380,12 +380,13 @@ prep_RAR_renin <- function(res1, others) {
 
 
 
-load_RAR_enc <- function(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_ENC.csv", bp_only = FALSE, EMPI_DATE_Level = TRUE, outpatient_only = TRUE, logger = NULL){
+load_RAR_enc <- function(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_ENC.csv", bp_only = FALSE, EMPI_DATE_Level = TRUE, outpatient_only = TRUE, left_censor_date = as.Date("1997-01-01"), logger = NULL){
   #' Load in the RAR Encounter data, and do some basic cleaning
   #' @param dat_file string Raw data text file location 
   #' @param bp_only logic If TRUE, only keep BP's, excluding all other detailed info. Default is FALSE
   #' @param EMPI_DATE_Level logic If TRUE, collapse into EMPI_DATE Level. Default is TRUE
   #' @param outpatient_only logic If TRUE, only include Outpatients. Default is TRUE
+  #' @param left_censor_date POSIXct Left-censoring date
   #' @param logger logger For logging purposes, should be initialized beforehand
   #' @return rar_enc tibble pre-processed RAR Dx data
 
@@ -415,7 +416,12 @@ load_RAR_enc <- function(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_ENC.csv"
   
   rar_enc <- fread_epic(dat_file = dat_file, colClasses = colClasses, logger = logger)
   
-  
+  # left censor data
+  if(!is.null(left_censor_date)){
+    rar_enc %<>% filter(ENC_DATE >= left_censor_date)
+    msg <- sprintf("load_RAR_enc: Encounter data were left censored at %s", left_censor_date)
+    if(!is.null(logger)) logger$info(msg)
+  }
 
   if(outpatient_only){
     # Assert that PATIENT_MASTER_CLASS is present
@@ -526,6 +532,7 @@ load_RAR_Dx <- function(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_DX.csv", 
 
 sub_RAR_dx <- function(dat, CODE_Level, hierarchy_dx,
                        EMPI_DATE_Level = TRUE, outpatient_only = TRUE,
+                       left_censor_date = as.Date("1997-01-01"),
                        logger = NULL){
   #' Getting a subset for Dx data, in a wide data set
   #' @param dat tibble Pre-processed RAR Dx data
@@ -533,10 +540,19 @@ sub_RAR_dx <- function(dat, CODE_Level, hierarchy_dx,
   #' @param hierachy_dx vector A character vector that specifies Dx in corresponding hierarchy level
   #' @param EMPI_DATE_Level logit If TRUE, collapse data into EMPI_DATE Level. Default is TRUE
   #' @param outpatient_only logit If TRUE, only include Outpatients. Default is TRUE.
+  #' @param left_censor_date POSIXct Left-censoring date
   #' @return ret tibble A table for Dx's in ICD, Dx_h0, Dx_h1, Dx_h2 levels, and Dx counts for all EMPI_DATE (outpatient by default)
   
   ret <- tibble()  # return tibble
   spec_dx <- c() # specific dx's captured
+  
+  # left censor data
+  if(!is.null(left_censor_date)){
+    dat %<>% filter(ENC_DATE >= left_censor_date)
+    msg <- sprintf("sub_RAR_dx: Encounter data were left censored at %s", left_censor_date)
+    if(!is.null(logger)) logger$info(msg)
+  }
+  
   
   dat$EMPI_DATE <-  paste(dat$EMPI, 
                           format(dat$ENC_DATE, "%Y-%m-%d"))
@@ -704,19 +720,22 @@ load_RAR_PtDemo <- function(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_DEMO.
 
 
 
-load_Lab <- function(dat_file,  lab_source, adjust_up = 1.5, adjust_down = 0.5, logger = NULL,
-                     allow_missing_columns=FALSE){
+load_Lab <- function(dat_file,  lab_source, adjust_up = 1.5, adjust_down = 0.5, 
+                     left_censor_date = as.Date("1997-01-01"), allow_missing_columns=FALSE,
+                     logger = NULL){
   #' Load in the Lab data, and do some basic cleaning. Lab data includes RAR_Lab and RAR_V3
   #' @param dat_file string Raw data text file location 
   #' @param lab_source character Lab test source: ALL or RAR
   #' @param adjust_up numeric Rate for adjusting "> X", default is 0.5
   #' @param adjust_donw numeric Rate for adjusting "< X", default is 1.5
+  #' @param left_censor_date POSIXct Left-censoring date
   #' @param allow_missing_columns Bool If true, then allow columns to be missing from specified colClasses. Only use for exploratory work
+  #' @param logger logger For logging purpose. Default is NULL
   #' @return rar_lab tibble pre-processed RAR Dx data
   
-  # TODO: Not Finished.
-  # read in the files with specified column classes
   
+  
+  # read in the files with specified column classes
   if(lab_source == "ALL"){
     # specify Column Classes
     colClasses <- c(ENC_DATE = "PDS_DateTime", ORDER_START_DATE = "PDS_DateTime", O_SOURCE_LAST_UPDATE = "PDS_DateTime", 
@@ -759,7 +778,16 @@ load_Lab <- function(dat_file,  lab_source, adjust_up = 1.5, adjust_down = 0.5, 
   # modify RESULT_VALUE, using numericize function
   rar_lab$RESULT_VALUE <- numericize(rar_lab$RESULT_VALUE, adjust_up = adjust_up, adjust_down = adjust_down)
   
-
+  
+  # left censor data
+  if(!is.null(left_censor_date)){
+    rar_lab %<>% filter(ENC_DATE >= left_censor_date)
+    msg <- sprintf("load_Lab: Encounter data were left censored at %s", left_censor_date)
+    if(!is.null(logger)) logger$info(msg)
+  }
+  
+  
+  
   
   return(rar_lab)
   
@@ -1137,7 +1165,7 @@ clean_RAR <- function(dat, blood_only=TRUE){
 
 
 rar_merge <- function(rar_dx, rar_enc, rar_lab, rar_demo, id, pt_id = "EMPI",
-                      begin_time = as.Date("1997-01-01"),
+                      left_censor_date = as.Date("1997-01-01"),
                       join_to_ENC=TRUE, logger = NULL){
   #' This function is used to load in rar_enc,rar_dx, rar_lab, rar_demo data sets and merge them together
   #' for a encounter level data set, so all data sets are merged to encounter data
@@ -1147,7 +1175,7 @@ rar_merge <- function(rar_dx, rar_enc, rar_lab, rar_demo, id, pt_id = "EMPI",
   #' @param rar_demo tibble Patients' demographic data set
   #' @param id character Unique ID to merge the 4 data sets together
   #' @param pt_id character Unique ID for patients. Default is EMPI
-  #' @param begin_time POSIXct Time cutpoint for encounters. Default if 1997-01-01
+  #' @param left_censor_date POSIXct Left censoring date. Default is 1997-01-01
   #' @param join_to_ENC logit If FALSE, keep all info from all data sets. 
   #' Default is TRUE, and every other data sets were merged to Encounter data set.
   #' @return rar_mg tibble The merged data set
@@ -1212,7 +1240,7 @@ rar_merge <- function(rar_dx, rar_enc, rar_lab, rar_demo, id, pt_id = "EMPI",
   
   
   # Apply time cutpoint
-  rar_mg %<>% filter(ENC_DATE >= begin_time)
+  rar_mg %<>% filter(ENC_DATE >= left_censor_date)
   
   
   return(rar_mg)
