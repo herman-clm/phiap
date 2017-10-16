@@ -579,7 +579,7 @@ sub_RAR_dx <- function(dat, CODE_Level, hierarchy_dx,
   # ret$EMPI_DATE <- paste(ret$EMPI, 
   #                        format(ret$ENC_DATE, "%Y-%m-%d"))
   
-  # Add number of Dx's for each encounter (EMPI_DATE) at the very beginning
+  # Add number of ALL Dx's for each encounter (EMPI_DATE) at the very beginning
   Dx_ct <- dat %>% 
     group_by(EMPI_DATE) %>%
     summarise(n_Dx_enc = n_distinct(CODE))
@@ -1263,20 +1263,21 @@ enc_to_pts <- function(rar_enc_level, sbp_lower_limit = 140, dbp_lower_limit = 9
   
   # Add demo's
   demo <- enc %>% 
-    select(EMPI, GENDER_MASTER_CODE, BIRTH_DATE, RACE_MASTER_CODE, RACE_MASTER_HISPANIC_YN) %>%
+    select(EMPI, GENDER_MASTER_CODE, BIRTH_DATE
+           , RACE_MASTER_CODE, RACE_MASTER_HISPANIC_YN) %>%
     group_by(EMPI) %>%
     slice(1)
   
   pts <- demo
   
   
-  # SBP_n, DBP_n, High_BP_n, enc_n, encounter with bp
+  # high_sbp_n, high_dbp_n, High_BP_n, enc_n, encounter with bp
   BP_sum <- enc %>% 
     group_by(EMPI) %>% 
     summarize(enc_n = n(), 
               enc_bp_n = sum(!is.na(BP_SYSTOLIC) & !is.na(BP_DIASTOLIC)),
-              sbp_n = sum(BP_SYSTOLIC >= sbp_lower_limit, na.rm = TRUE), 
-              dbp_n = sum(BP_DIASTOLIC >= dbp_lower_limit, na.rm = TRUE),
+              high_sbp_n = sum(BP_SYSTOLIC >= sbp_lower_limit, na.rm = TRUE), 
+              high_dbp_n = sum(BP_DIASTOLIC >= dbp_lower_limit, na.rm = TRUE),
               high_BP_n = sum(BP_SYSTOLIC >= sbp_lower_limit | BP_DIASTOLIC >= dbp_lower_limit, na.rm = TRUE),
               high_BP_prop = high_BP_n / enc_bp_n, 
               first_ENC_DATE = min(ENC_DATE), 
@@ -1362,6 +1363,7 @@ enc_to_pts <- function(rar_enc_level, sbp_lower_limit = 140, dbp_lower_limit = 9
   ## NOTE: by default of 14 days, 5929 missing; use 30 days, 5317 missing
   ## Only BP prior to RAR_DATE: 2995 missing
   ## BP Prior + 7 days after: 2956 missing
+  ## Currently, using 1 year pri to 7 days after RAR date
   bp_sum <- enc %>% 
     select(EMPI, BP_DIASTOLIC, BP_SYSTOLIC, ENC_DATE, RAR_DATE) %>%
     mutate(time_to_RAR = as.numeric(difftime(ENC_DATE, RAR_DATE, units="days")),
@@ -1383,6 +1385,7 @@ enc_to_pts <- function(rar_enc_level, sbp_lower_limit = 140, dbp_lower_limit = 9
   pts %<>% full_join(., bp_sum, by="EMPI")
   
   # Add Labs
+  ## NOTE: currently using a 14-day time window for lab tests
   lab_cols <- grepl("^Test", names(enc))
   lab_sum <- enc %>% 
     select(EMPI, ENC_DATE, RAR_DATE, names(enc)[lab_cols]) %>%
