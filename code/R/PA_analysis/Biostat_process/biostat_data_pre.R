@@ -94,7 +94,7 @@ lab_PK_ORDER_ID_RIC <- clean_Lab(dat = lab_raw, RAR_only = FALSE, potassium_in =
 lab_all <- collapse_lab_EMPI_DATE(lab_PK_ORDER_ID_RIC)
 
 
-# save(dx_all, lab_all, rar_demo, rar_enc, file = "PA_analysis/Biostat_process/bios_data_v0.2.1.RData")
+# save(dx_all, lab_all, rar_demo, rar_enc, file = "PA_analysis/Biostat_process/bios_data_v0.2.1.1.RData")
 
 ## HERMANDA_RARV3.csv
 # rar <- load_Lab(dat_file = "/data/raw_data/PA/HERMANDA_RARV3.csv", lab_source = "RAR",
@@ -103,11 +103,8 @@ lab_all <- collapse_lab_EMPI_DATE(lab_PK_ORDER_ID_RIC)
 
 
 
-# First version RData
-# load("PA_analysis/Biostat_process/bios_data_v0.2.1.RData")
-
 # Version 0.2.1 RData
-# load("/data/processed_data/RAR/bios_data_v0.2.1.RData")
+# load("/data/processed_data/RAR/bios_data_v0.2.1.1.RData")
 # Merge all files
 rar_mg <- rar_merge(rar_dx = dx_all, rar_enc = rar_enc, rar_lab = lab_all, rar_demo = rar_demo, 
                   id = "EMPI_DATE", pt_id = "EMPI", left_censor_date = left_censor_date,
@@ -153,11 +150,11 @@ PA_empi <- na.omit(unique(research_db$EMPI))
 rar_mg$PA_AVS_tot_0115 <- ifelse(rar_mg$EMPI %in% PA_empi, TRUE, FALSE)
 pts$PA_AVS_tot_0115 <- ifelse(pts$EMPI %in% PA_empi, TRUE, FALSE)
 
-rar_mg %<>% select(PA_AVS_tot_0115, everything())
-pts %<>% select(PA_AVS_tot_0115, everything())
+rar_mg %<>% select(PA_AVS_tot_0115, everything()) %>% ungroup()
+pts %<>% select(PA_AVS_tot_0115, everything()) %>% ungroup()
 ###########   End of Research Database
 
-save(rar_mg, pts, file = "PA_analysis/Biostat_process/bios_data_enc_pts_v0.2.1.RData")
+save(rar_mg, pts, file = "PA_analysis/Biostat_process/bios_data_enc_pts_v0.2.1.1.RData")
 
 
 
@@ -169,7 +166,7 @@ enc_level <- deidentify(dat = rar_mg, primary_key = "EMPI_DATE", pt_id = "EMPI",
                         drop_cols = c("SOURCE_CODE", "PATIENT_MASTER_CLASS"), 
                         dt_cols = c("ENC_DATE", "BIRTH_DATE"),
                         out_file_for_mapping = paste(output_dir, 
-                                                     paste(out_root, "de_id_mapping_v0.2.1", "csv", sep="."),
+                                                     paste(out_root, "de_id_mapping_v0.2.1.1", "csv", sep="."),
                                                      sep="/"), 
                         seed = config$RAR$seed)
 
@@ -189,7 +186,7 @@ pt_level <- deidentify(dat = pts, primary_key = NULL, pt_id = "EMPI", mode = "lo
                        drop_cols = c("SOURCE_CODE", "PATIENT_MASTER_CLASS", "EMPI_DATE", "ORDER_START_DATE", "ENC_DATE"), 
                        dt_cols = c("BIRTH_DATE", "first_ENC_DATE", "RAR_DATE","bp_ENC_DATE"),
                        in_file_for_mapping = paste(output_dir, 
-                                                   paste(out_root, "de_id_mapping_v0.2.1", "csv", sep="."),
+                                                   paste(out_root, "de_id_mapping_v0.2.1.1", "csv", sep="."),
                                                    sep="/"))
 
 pt_level %<>% select(-BIRTH_DATE)
@@ -200,19 +197,19 @@ pt_level %<>% select(DE_PT_ID, PA_AVS_tot_0115, everything())
 
 
 
-save(enc_level, pt_level, file = paste(output_dir, paste(out_root, "bios_data_deid_v0.2.1", "RData", sep="."),
+save(enc_level, pt_level, file = paste(output_dir, paste(out_root, "bios_data_deid_v0.2.1.1", "RData", sep="."),
                                        sep="/"))
 
 
 # Write out resulting datasets
 write.csv(enc_level, 
           file = paste(output_dir, 
-                       paste(out_root, "de_enc_level_v0.2.1", "csv", sep="."),
+                       paste(out_root, "de_enc_level_v0.2.1.1", "csv", sep="."),
                        sep="/"),
           row.names = FALSE)
 write.csv(pt_level, 
           file = paste(output_dir, 
-                       paste(out_root, "de_pt_level_v0.2.1", "csv", sep="."),
+                       paste(out_root, "de_pt_level_v0.2.1.1", "csv", sep="."),
                        sep="/"),
           row.names = FALSE)
 

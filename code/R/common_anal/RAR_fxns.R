@@ -477,7 +477,7 @@ load_RAR_enc <- function(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_ENC.csv"
       group_by(EMPI_DATE) %>%
       arrange(ENC_TYPE_MASTER_CODE, desc(E_SOURCE_LAST_UPDATE)) %>%
       mutate_at(vars(BP_SYSTOLIC:BP_DIASTOLIC), 
-                funs(median(., na.rm = FALSE))) %>%
+                funs(median(., na.rm = TRUE))) %>%
       slice(1) %>%
       ungroup()
 

@@ -4,11 +4,10 @@ output:
   html_document:
     theme: journal
     toc: true
-    toc_float: true
     toc_depth: 3
     number_sections: true
-    fig_width: 20
-    fig_height: 10
+    fig_width: 15
+    fig_height: 8
     df_print: paged
 ---
 
@@ -28,15 +27,711 @@ suppressMessages(library(ini))
 suppressMessages(library(ggplot2))
 suppressMessages(library(kableExtra))
 suppressMessages(library(knitr))
+suppressMessages(library(scales))
+suppressMessages(library(reporttools))
+suppressMessages(library(readxl))
+suppressMessages(library(gtools))
 
 
 ```
 
 
 ```{r load_data, include=FALSE, cache=TRUE, cache.lazy=FALSE}
-load("bios_data_enc_pts_v0.2.1.RData")
-load("bios_data_v0.2.1.RData")
+load("/data/processed_data/RAR/bios_data_enc_pts_v0.2.2_beta.RData")
 ```
+
+
+# Aim 1
+## Dx's
+### Dx Basic
+#### How many patients have >1 PA Dx's? {-}
+In this v0.2.1 data, there are `r length(unique(pts$EMPI))` patients. The data is left censored, with a time cut-point of 1997-01-01. 
+```{r pa_dx}
+pa_dx_EMPI <- pts[which(pts$Dx_h1_Primary_aldosteronism_n >= 2), "EMPI"]
+pa_dx_pts <- pts %>% filter(EMPI %in% pa_dx_EMPI$EMPI)
+not_pa_dx_pts <- pts %>% filter(!(EMPI %in% pa_dx_EMPI$EMPI))
+```
+There are `r nrow(pa_dx_EMPI)` patients with more than 1 Primary Aldosteronism Dx in h1 level (Dx_h1_Primary_aldosteronism_n).   
+
+#### In general, what is the distribution of PA Dx's? {-}
+In `r length(unique(pts$EMPI))` patients, `r sum(pts$Dx_h1_Primary_aldosteronism_n != 0)` of them have PA Dx's. For those patients with PA Dx:
+```{r dist_PA_dx}
+pts %>% filter(Dx_h1_Primary_aldosteronism_n != 0) %>%
+  select(Dx_h1_Primary_aldosteronism_n) %>%
+  group_by(Dx_h1_Primary_aldosteronism_n) %>%
+  summarise(N=n()) %>%
+  ggplot(.) + geom_bar(aes(x=Dx_h1_Primary_aldosteronism_n, y=N), stat="identity")
+```
+Here is the summary for PA Dx in all patients and patients with PA Dx:
+```{r sum_PA_dx}
+summary(pts$Dx_h1_Primary_aldosteronism_n)
+summary(pts %>% filter(Dx_h1_Primary_aldosteronism_n != 0) %>% select(Dx_h1_Primary_aldosteronism_n))
+```
+Use 8 as a Dx cut point: patients with more than 8 PA Dx are group together   
+
+
+
+#### Using 14 (arbitrary) of PA Dx, descriptives between groups {-}
+```{r new_dx_cut}
+pts$PA_Dx <- ifelse(pts$Dx_h1_Primary_aldosteronism_n > 14, "14+", pts$Dx_h1_Primary_aldosteronism_n)
+pts$PA_Dx <- factor(pts$PA_Dx, levels = mixedsort(unique(pts$PA_Dx)))
+```
+First, a brief descriptives on some variables:
+```{r pa_dx_descriptives}
+# numerics
+num_var <- c("time_in_sys_yr", "time_to_1st_hyperaldo_dx_yr", "time_to_1st_RAR_yr", "high_BP_n", "high_BP_prop", "enc_n", 'enc_bp_n', 'high_BP_n', 'high_BP_prop', 'Aldo', "PRA", "DRC", "RAR_tests_n", "dbp", "sbp", "Test_POTASSIUM_mmol/L", "Dx_n", "Dx_h1_Primary_aldosteronism_n", "Dx_h1_Other_hyperaldo_n", "Dx_h1_Essential_HTN_n", "Dx_h1_Secondary_HTN_n", "Dx_h1_Obstructive_Sleep_Apnea_n", "Dx_h1_Other_Sleep_Apnea_n")
+
+pts %>% group_by(PA_Dx) %>%
+  mutate(N=n()) %>%
+  summarise_at(vars(N, num_var), funs(median=median(., na.rm=T)))
+
+# categoricals
+pts %>% group_by(PA_Dx) %>%
+  summarise(Gender_F = percent(sum(GENDER_MASTER_CODE =='F',na.rm=T)/n()), 
+            RACE_Black = percent(sum(RACE_MASTER_CODE =='BLACK',na.rm=T)/n()),
+            RACE_White = percent(sum(RACE_MASTER_CODE =='WHITE',na.rm=T)/n()), 
+            Primary_ENTITY_CPUP = percent(sum(pri_entity =='CPUP',na.rm=T)/n()),
+            Primary_ENTITY_CCA = percent(sum(pri_entity =='CCA',na.rm=T)/n()),
+            Primary_Loc_RENAL_PERELMAN = percent(sum(pri_loc =='RENAL PERELMAN',na.rm=T)/n()),
+            RAR_ENTITY_CPUP = percent(sum(rar_entity =='CPUP',na.rm=T)/n()),
+            RAR_ENTITY_CCA = percent(sum(rar_entity =='CCA',na.rm=T)/n()),
+            RAR_Loc_RENAL_PERELMAN = percent(sum(rar_loc =='RENAL PERELMAN',na.rm=T)/n())
+            )
+```
+
+What about their distribution?
+```{r pa_dx_tis_dist}
+cc <- seq_gradient_pal("black", "red")(seq(0,1,length.out = 10))
+pts %>% 
+  filter(PA_Dx %in% c('2','3','4','5')) %>%
+  ggplot(.) + geom_density(aes(time_in_sys_yr, group=PA_Dx, linetype=PA_Dx, color=PA_Dx)) + scale_color_manual(values=cc)
+```
+
+
+#### Using 0,1,2,3-5,6-9,9+ as PA Dx groupings {-}
+Another way of grouping:
+```{r new_6_grouping}
+pts$PA_Dx <- case_when(pts$Dx_h1_Primary_aldosteronism_n == 0 ~ "0",
+                       pts$Dx_h1_Primary_aldosteronism_n == 1 ~ "1",
+                       pts$Dx_h1_Primary_aldosteronism_n == 2 ~ "2",
+                       pts$Dx_h1_Primary_aldosteronism_n %in% c("3","4","5") ~ "3-5",
+                       pts$Dx_h1_Primary_aldosteronism_n %in% c("6","7","8", "9") ~ "6-9",
+                       TRUE ~ "9+")
+```
+Basic descriptives on new grouping
+```{r pa_dx_descriptives_new}
+# numerics
+num_var <- c("time_in_sys_yr", "time_to_1st_hyperaldo_dx_yr", "time_to_1st_RAR_yr", "high_BP_n", "high_BP_prop", "enc_n", 'enc_bp_n', 'high_BP_n', 'high_BP_prop', 'Aldo', "PRA", "DRC", "RAR_tests_n", "dbp", "sbp", "Test_POTASSIUM_mmol/L", "Dx_n", "Dx_h1_Primary_aldosteronism_n", "Dx_h1_Other_hyperaldo_n", "Dx_h1_Essential_HTN_n", "Dx_h1_Secondary_HTN_n", "Dx_h1_Obstructive_Sleep_Apnea_n", "Dx_h1_Other_Sleep_Apnea_n")
+
+
+median_quantile <- function(x){
+  q1 = quantile(x, 0.25, na.rm=TRUE)
+  q2 = quantile(x, 0.5, na.rm=TRUE)
+  q3 = quantile(x, 0.75, na.rm=TRUE)
+  missing_n = sum(is.na(x))
+  ret <- sprintf("%.3f (%.3f ~ %.3f) [Missing: %d]", q2, q1, q3, missing_n)
+  return(ret)
+}
+
+pts %>% group_by(PA_Dx) %>%
+  mutate(N=n()) %>%
+  summarise_at(vars(N, num_var), funs(median=median_quantile(.)))
+
+temp <- pts[,c('PA_Dx', 'time_in_sys_yr')]
+pairwise.wilcox.test(temp, 'PA_Dx')
+
+# categoricals
+pts %>% group_by(PA_Dx) %>%
+  summarise(Gender_F = percent(sum(GENDER_MASTER_CODE =='F',na.rm=T)/n()), 
+            RACE_Black = percent(sum(RACE_MASTER_CODE =='BLACK',na.rm=T)/n()),
+            RACE_White = percent(sum(RACE_MASTER_CODE =='WHITE',na.rm=T)/n()), 
+            Primary_ENTITY_CPUP = percent(sum(pri_entity =='CPUP',na.rm=T)/n()),
+            Primary_ENTITY_CCA = percent(sum(pri_entity =='CCA',na.rm=T)/n()),
+            Primary_Loc_RENAL_PERELMAN = percent(sum(pri_loc =='RENAL PERELMAN',na.rm=T)/n()),
+            RAR_ENTITY_CPUP = percent(sum(rar_entity =='CPUP',na.rm=T)/n()),
+            RAR_ENTITY_CCA = percent(sum(rar_entity =='CCA',na.rm=T)/n()),
+            RAR_Loc_RENAL_PERELMAN = percent(sum(rar_loc =='RENAL PERELMAN',na.rm=T)/n())
+            )
+```
+
+
+Plots:   
+##### Time in system? {-}
+```{r pa_dx_time_in_sys}
+pts %>% ggplot(.) + geom_boxplot(aes(x=PA_Dx, y = time_in_sys_yr))
+```
+A big decrease in group 2.   
+```{r pa_dx_tis_dist_new_grp}
+cc <- seq_gradient_pal("black", "red")(seq(0,1,length.out = 10))
+pts %>% 
+  ggplot(.) + geom_density(aes(time_in_sys_yr, group=PA_Dx, linetype=PA_Dx, color=PA_Dx),size=1) + scale_color_manual(values=cc)
+```
+
+```{r pa_dx_tis_dist_new_grp_2, fig.width=6,fig.height=15}
+cc <- seq_gradient_pal("black", "red")(seq(0,1,length.out = 10))
+g <- pts %>% 
+  ggplot(.)
+g <- g + geom_density(aes(time_in_sys_yr))
+g <- g + facet_wrap(~ PA_Dx, scales = "free_y", ncol = 1)
+g
+```
+
+##### Time to 1st RAR {-}
+```{r pa_dx_time_to_1st_RAR}
+pts %>% ggplot(.) + geom_boxplot(aes(x=PA_Dx, y = time_to_1st_RAR_yr))
+```
+
+
+
+##### Time to 1st Hyperaldo Dx {-}
+```{r pa_dx_time_to_1st_hyperaldo_Dx}
+pts %>% ggplot(.) + geom_boxplot(aes(x=PA_Dx, y = time_to_1st_hyperaldo_dx_yr))
+```
+
+
+##### Gender? {-}
+```{r pa_dx_gender}
+pts %>% select(PA_Dx, GENDER_MASTER_CODE) %>%
+  group_by(PA_Dx, GENDER_MASTER_CODE) %>%
+  summarise(N=n()) %>% ungroup() %>%
+  group_by(PA_Dx) %>%
+  mutate(percentage=N/sum(N)) %>%
+  ggplot(.) + geom_bar(aes(x=PA_Dx, y=percentage, fill=GENDER_MASTER_CODE), stat="identity") +
+  labs(y="Percentage")
+```
+```{r pa_dx_gender_rm0}
+pts %>% select(PA_Dx, GENDER_MASTER_CODE) %>%
+  filter(PA_Dx != "0") %>%
+  ggplot(.) + geom_bar(aes(PA_Dx,fill=GENDER_MASTER_CODE), position='dodge')
+```
+For group with 2 PA Dx's, females are more than males. In other groups, females are fewer than males.   
+
+##### Race? {-}
+```{r pa_dx_race}
+pts %>% select(PA_Dx, RACE_MASTER_CODE) %>%
+  group_by(PA_Dx, RACE_MASTER_CODE) %>%
+  summarise(N=n()) %>%
+  ggplot(.) + geom_bar(aes(x=PA_Dx, y=N,fill=RACE_MASTER_CODE), position=position_fill(), stat="identity") + labs(y="Percentage")
+```
+
+
+```{r pa_dx_race_rm0}
+pts %>% select(PA_Dx, RACE_MASTER_CODE) %>%
+  filter(PA_Dx != "0") %>%
+  ggplot(.) + geom_bar(aes(PA_Dx,fill=RACE_MASTER_CODE), position="dodge")
+```
+
+##### Encounter with BP number? {-}
+```{r pa_dx_enc_bp_n}
+pts %>% ggplot(.) + geom_boxplot(aes(x=PA_Dx, y = enc_bp_n))
+```
+```{r pa_dx_enc_bp_n_rm0}
+pts %>% 
+  filter(PA_Dx != "0") %>%
+  ggplot(.) + geom_boxplot(aes(x=PA_Dx, y = enc_bp_n))
+```
+
+##### High BP? {-}
+High BP number:
+```{r pa_dx_high_bp_n}
+pts %>% 
+  filter(PA_Dx != "0") %>%
+  ggplot(.) + geom_boxplot(aes(x=PA_Dx, y = high_BP_n)) + scale_y_log10() + labs(y = "log(high BP n)")
+```
+There's no big difference between groups in high BP number.
+High BP proportion:
+```{r pa_dx_high_bp_prop}
+pts %>% 
+  filter(PA_Dx != "0") %>%
+  ggplot(.) + geom_boxplot(aes(x=PA_Dx, y = high_BP_prop))
+```
+
+##### Primary ENTITY {-}
+```{r pa_dx_pri_entity}
+pts %>% select(PA_Dx, pri_entity) %>%
+  # filter(PA_Dx != "0") %>%
+  group_by(PA_Dx, pri_entity) %>%
+  summarise(N=n()) %>%
+  ggplot(.) + geom_bar(aes(x=PA_Dx, y=N, fill=pri_entity), position=position_fill(), stat='identity')
+```
+
+
+##### RAR Test Results {-}
+```{r pa_dx_Aldo}
+pts %>% 
+  ggplot(.) + geom_boxplot(aes(x=PA_Dx, y = Aldo)) +
+  geom_hline(yintercept = 15, linetype=2, color=2) + 
+  scale_y_log10() + labs(y="log(Aldo)")
+```
+```{r pa_dx_PRA}
+pts %>% 
+  ggplot(.) + geom_boxplot(aes(x=PA_Dx, y = PRA)) + 
+  geom_hline(yintercept = 0.5, linetype=2, color=2) +
+  scale_y_log10() + labs(y="log(PRA)")
+```
+
+The DRC for group 1 & 2 are not so accurate, since there are only 2 and 3 DRC's in these groups.   
+For Aldo/PRA:
+```{r pa_dx_rar_ratio}
+pts %>% 
+  ggplot(.) + geom_boxplot(aes(x=PA_Dx, y = Aldo/PRA)) + 
+  geom_hline(yintercept = 30, linetype=2, color=2) + 
+  scale_y_log10() + 
+  labs(y="log(Aldo/PRA)")
+```
+For Aldo/PRA ratio, grouping by RDB:
+```{r pa_dx_rar_ratio_RDB}
+pts %>% 
+  ggplot(.) + geom_boxplot(aes(x=PA_Dx, y = Aldo/PRA, fill=PA_AVS_tot_0115)) + 
+  geom_hline(yintercept = 30, linetype=2, color=2) + 
+  scale_y_log10() + 
+  labs(y="log(Aldo/PRA)")
+```
+##### Potassium {-}
+```{r pa_dx_Potassium}
+pts %>% ggplot(.) +
+  geom_boxplot(aes(x=PA_Dx, y = pts$`Test_POTASSIUM_mmol/L`)) 
+```
+As for the IQR's, there is no big difference.
+
+##### BP's associated with RAR
+```{r pa_dx_sbp}
+pts %>% ggplot(.) +
+  geom_boxplot(aes(x=PA_Dx, y = sbp)) + 
+  geom_hline(yintercept = 140, linetype=2, color=2)
+```
+```{r pa_dx_dbp}
+pts %>% ggplot(.) +
+  geom_boxplot(aes(x=PA_Dx, y = dbp))  + 
+  geom_hline(yintercept = 90, linetype=2, color=2)
+```
+
+##### Number of all Dx's
+```{r pa_dx_All_Dx}
+pts %>% ggplot(.) +
+  geom_boxplot(aes(x=PA_Dx, y = Dx_n)) + scale_y_log10()
+```
+
+#### Integrate with RAR Tests
+```{r with_RAR_strict}
+pts %>% 
+  mutate(RAR_Strict = ifelse(Aldo >= 15 & PRA <= 0.5 & Aldo/PRA >= 30, TRUE, FALSE)) %>%
+  select(RAR_Strict, PA_Dx) %>%
+  table(., useNA="always")
+```
+If we apply PA Dx >= 2 as criteria, we could get several tables based on different RAR criteria:   
+
+##### RAR Strict Criteria {-}
+```{r with_RAR_strict_PA_criteria, echo=FALSE}
+pts %>% 
+  mutate(RAR_Strict_criteria = factor(Aldo >= 15 & PRA <= 0.5 & Aldo/PRA >= 30, levels=c(TRUE, FALSE)), 
+         PA_Dx_C = factor(Dx_h1_Primary_aldosteronism_n >= 2, levels=c(TRUE, FALSE))) %>%
+  select(PA_Dx_C, RAR_Strict_criteria) %>%
+  table(., useNA="always")
+```
+
+```{r with_RAR_strict_PA_criteria_PPV, echo=FALSE}
+pts %>% 
+  mutate(RAR_Strict_criteria = factor(Aldo >= 15 & PRA <= 0.5 & Aldo/PRA >= 30, levels=c(TRUE, FALSE)), 
+         PA_Dx_C = factor(Dx_h1_Primary_aldosteronism_n >= 2, levels=c(TRUE, FALSE))) %>%
+  select(PA_Dx_C, RAR_Strict_criteria) %>%
+  table(., useNA="always") %>%
+  prop.table(., margin=1)
+```
+Apply RAR Strict criteria on encounter level:
+```{r with_RAR_strict_PA_criteria_enc, echo=FALSE}
+true_false_NA <- function(X){
+  if(all(is.na(X))){
+    return(NA)
+  }else{
+    return(any(X, na.rm = T))
+  }
+}
+
+
+rar_mg %>% group_by(EMPI) %>%
+  summarise(RAR_Strict_criteria = factor(true_false_NA(Aldo >= 15 & PRA <= 0.5 & Aldo/PRA >= 30), levels=c(TRUE, FALSE)),
+            PA_Dx_C = factor(sum(Dx_h1_Primary_aldosteronism, na.rm=TRUE) >= 2, levels=c(TRUE, FALSE))) %>%
+  select(PA_Dx_C, RAR_Strict_criteria) %>%
+  table(., useNA="always")
+
+```
+
+```{r with_RAR_strict_PA_criteria_enc_PPV, echo=FALSE}
+rar_mg %>% group_by(EMPI) %>%
+  summarise(RAR_Strict_criteria = factor(true_false_NA(Aldo >= 15 & PRA <= 0.5 & Aldo/PRA >= 30), levels=c(TRUE, FALSE)),
+            PA_Dx_C = factor(sum(Dx_h1_Primary_aldosteronism, na.rm=TRUE) >= 2, levels=c(TRUE, FALSE))) %>%
+  select(PA_Dx_C, RAR_Strict_criteria) %>%
+  table(., useNA="always") %>%
+  prop.table(., margin=1)
+```
+
+```{r with_RAR_strict_PA_criteria_enc_sensitivity, echo=FALSE}
+rar_mg %>% group_by(EMPI) %>%
+  summarise(RAR_Strict_criteria = factor(true_false_NA(Aldo >= 15 & PRA <= 0.5 & Aldo/PRA >= 30), levels=c(TRUE, FALSE)),
+            PA_Dx_C = factor(sum(Dx_h1_Primary_aldosteronism, na.rm=TRUE) >= 2, levels=c(TRUE, FALSE))) %>%
+  select(PA_Dx_C, RAR_Strict_criteria) %>%
+  table(., useNA="always") %>%
+  prop.table(., margin=2)
+```
+
+
+```{r with_RAR_strict_PA_criteria_Venn}
+VennDiagram::draw.pairwise.venn(area1=203+298, area2=203+158, cross.area = 203, 
+                                category=c("RAR Strict Criteria", "PA_Dx >= 2"),
+                                fill = c("light blue", "pink"), alpha = rep(0.5, 2), 
+                                cat.pos = c(0, 0), cat.dist = rep(0.025, 2))
+```
+
+
+##### RAR PRA Criteria {-}
+```{r with_RAR_PRA, echo=FALSE}
+rar_mg %>% group_by(EMPI) %>%
+  summarise(RAR_PRA_criteria = factor(true_false_NA(Aldo >= 15 & PRA <= 1 & Aldo/PRA >= 30), levels=c(TRUE, FALSE)),
+            PA_Dx_C = factor(sum(Dx_h1_Primary_aldosteronism, na.rm=TRUE) >= 2, levels=c(TRUE, FALSE))) %>%
+  select(PA_Dx_C, RAR_PRA_criteria) %>%
+  table(., useNA="always")
+
+```
+
+##### RAR ARR Criteria {-}
+```{r with_RAR_ARR, echo=FALSE}
+rar_mg %>% group_by(EMPI) %>%
+  summarise(RAR_ARR_criteria = factor(true_false_NA(Aldo >= 15 & PRA <= 0.5 & Aldo/PRA >= 20), levels=c(TRUE, FALSE)),
+            PA_Dx_C = factor(sum(Dx_h1_Primary_aldosteronism, na.rm=TRUE) >= 2, levels=c(TRUE, FALSE))) %>%
+  select(PA_Dx_C, RAR_ARR_criteria) %>%
+  table(., useNA="always")
+
+```
+This result is same as that using strict RAR criteria.   
+
+##### RAR Aldo Criteria {-}
+```{r with_RAR_Aldo, echo=FALSE}
+rar_mg %>% group_by(EMPI) %>%
+  summarise(RAR_Aldo_criteria = factor(true_false_NA(Aldo >= 10 & PRA <= 0.5 & Aldo/PRA >= 30), levels=c(TRUE, FALSE)),
+            PA_Dx_C = factor(sum(Dx_h1_Primary_aldosteronism, na.rm=TRUE) >= 2, levels=c(TRUE, FALSE))) %>%
+  select(PA_Dx_C, RAR_Aldo_criteria) %>%
+  table(., useNA="always")
+```
+
+##### RAR Lax Criteria {-}
+```{r with_RAR_Lax, echo=FALSE}
+lax <- rar_mg %>% group_by(EMPI) %>%
+  summarise(RAR_Lax_criteria = factor(true_false_NA(Aldo >= 10 & PRA <= 1 & Aldo/PRA >= 20), levels=c(TRUE, FALSE)),
+            PA_Dx_C = factor(sum(Dx_h1_Primary_aldosteronism, na.rm=TRUE) >= 2, levels=c(TRUE, FALSE))) %>%
+  select(PA_Dx_C, RAR_Lax_criteria) %>%
+  table(., useNA="always")
+lax
+```
+
+```{r with_RAR_Lax_ppv, echo=FALSE}
+rar_mg %>% group_by(EMPI) %>%
+  summarise(RAR_Lax_criteria = factor(true_false_NA(Aldo >= 10 & PRA <= 1 & Aldo/PRA >= 20), levels=c(TRUE, FALSE)),
+            PA_Dx_C = factor(sum(Dx_h1_Primary_aldosteronism, na.rm=TRUE) >= 2, levels=c(TRUE, FALSE))) %>%
+  select(PA_Dx_C, RAR_Lax_criteria) %>%
+  table(., useNA="always") %>%
+  prop.table(., margin=1)
+```
+
+```{r with_RAR_Lax_sensitivity, echo=FALSE}
+rar_mg %>% group_by(EMPI) %>%
+  summarise(RAR_Lax_criteria = factor(true_false_NA(Aldo >= 10 & PRA <= 1 & Aldo/PRA >= 20), levels=c(TRUE, FALSE)),
+            PA_Dx_C = factor(sum(Dx_h1_Primary_aldosteronism, na.rm=TRUE) >= 2, levels=c(TRUE, FALSE))) %>%
+  select(PA_Dx_C, RAR_Lax_criteria) %>%
+  table(., useNA="always") %>%
+  prop.table(., margin=2)
+```
+
+##### Changing RAR Lab Criteria, PA_Dx Criteria {-}
+
+```{r foo, echo=FALSE}
+foo <- function(dat, PA_Dx_C){
+  
+  dat %<>% select(EMPI, Aldo, PRA, Dx_h1_Primary_aldosteronism)
+  
+  strict <- dat %>% group_by(EMPI) %>%
+  summarise(RAR_Strict_criteria = factor(true_false_NA(Aldo >= 15 & PRA <= 0.5 & Aldo/PRA >= 30), levels=c(TRUE, FALSE)),
+            PA_Dx_C = factor(sum(Dx_h1_Primary_aldosteronism, na.rm=TRUE) >= PA_Dx_C, levels=c(TRUE, FALSE))) %>%
+  select(PA_Dx_C, RAR_Strict_criteria) %>%
+  table()
+  
+  
+  pra <- dat %>% group_by(EMPI) %>%
+  summarise(RAR_PRA_criteria = factor(true_false_NA(Aldo >= 15 & PRA <= 1 & Aldo/PRA >= 30), levels=c(TRUE, FALSE)),
+            PA_Dx_C = factor(sum(Dx_h1_Primary_aldosteronism, na.rm=TRUE) >= PA_Dx_C, levels=c(TRUE, FALSE))) %>%
+  select(PA_Dx_C, RAR_PRA_criteria) %>%
+  table()
+  
+  
+  # arr <- dat %>% group_by(EMPI) %>%
+  # summarise(RAR_ARR_criteria = factor(true_false_NA(Aldo >= 15 & PRA <= 0.5 & Aldo/PRA >= 20), levels=c(TRUE, FALSE)),
+  #           PA_Dx_C = factor(sum(Dx_h1_Primary_aldosteronism, na.rm=TRUE) >= PA_Dx_C, levels=c(TRUE, FALSE))) %>%
+  # select(PA_Dx_C, RAR_ARR_criteria) %>%
+  # table()
+  
+  aldo <- dat %>% group_by(EMPI) %>%
+  summarise(RAR_Aldo_criteria = factor(true_false_NA(Aldo >= 10 & PRA <= 0.5 & Aldo/PRA >= 30), levels=c(TRUE, FALSE)),
+            PA_Dx_C = factor(sum(Dx_h1_Primary_aldosteronism, na.rm=TRUE) >= PA_Dx_C, levels=c(TRUE, FALSE))) %>%
+  select(PA_Dx_C, RAR_Aldo_criteria) %>%
+  table()
+  
+  lax <- dat %>% group_by(EMPI) %>%
+  summarise(RAR_Lax_criteria = factor(true_false_NA(Aldo >= 10 & PRA <= 1 & Aldo/PRA >= 20), levels=c(TRUE, FALSE)),
+            PA_Dx_C = factor(sum(Dx_h1_Primary_aldosteronism, na.rm=TRUE) >= PA_Dx_C, levels=c(TRUE, FALSE))) %>%
+  select(PA_Dx_C, RAR_Lax_criteria) %>%
+  table()
+  
+  
+  PA_p_RAR_p <- lapply(list(strict, pra, aldo, lax), function(X){X[1,1]}) %>% unlist
+  
+  PA_n_RAR_n <- lapply(list(strict, pra, aldo, lax), function(X){X[2,2]}) %>% unlist
+  
+  PA_p_RAR_n <- lapply(list(strict, pra, aldo, lax), function(X){X[1,2]}) %>% unlist
+  
+  PA_n_RAR_p <- lapply(list(strict, pra, aldo, lax), function(X){X[2,1]}) %>% unlist
+  
+  
+  pp_on_PA_p <- PA_p_RAR_p/(PA_p_RAR_p + PA_p_RAR_n)
+  pp_on_RAR_p <- PA_p_RAR_p/(PA_p_RAR_p + PA_n_RAR_p)
+  
+  
+  temp <- data.frame(PA_Dx_N_Criteria = PA_Dx_C,PA_p_RAR_p = PA_p_RAR_p, PA_n_RAR_n = PA_n_RAR_n, 
+                     PA_p_RAR_n = PA_p_RAR_n, PA_n_RAR_p = PA_n_RAR_p, 
+                     pp_on_PA_p = pp_on_PA_p, pp_on_RAR_p = pp_on_RAR_p, RAR_Criteria = c("Strict","PRA","Aldo","Lax"))
+  
+  ret <- melt(temp, id.vars = c('PA_Dx_N_Criteria', "RAR_Criteria"))
+  ret$RAR_Criteria <- factor(ret$RAR_Criteria, levels=c("Strict","PRA","Aldo","Lax"))
+  
+  return(ret)
+}
+
+```
+
+```{r prepare_for_PA_Dx_all_plot}
+all_pa_dx_C_list <- lapply(1:3, function(x){foo(rar_mg, PA_Dx_C = x)})
+all_pa_dx_C <- do.call(rbind, all_pa_dx_C_list)
+```
+
+Make a plot!   
+```{r pa_dx_1_2_3_plt_PPV}
+all_pa_dx_C %>% filter(variable == "pp_on_PA_p" | variable == "pp_on_RAR_p") %>%
+  mutate(variable = factor(variable, labels=c("P(PA+ & RAR+|PA+)", "P(PA+ & RAR+|RAR+)"))) %>%
+  ggplot(.) + 
+  geom_line(aes(x=RAR_Criteria, y = value, group=PA_Dx_N_Criteria, color=as.factor(PA_Dx_N_Criteria))) + 
+  geom_point(aes(x=RAR_Criteria, y = value, group=PA_Dx_N_Criteria, color=as.factor(PA_Dx_N_Criteria))) + 
+  labs(x="RAR Criteria", y= "Percentage") + 
+  guides(color=guide_legend(title="# of PA Dx as Criterion")) + 
+  scale_y_continuous(labels=percent) + facet_wrap(~variable, nrow = 2, scales = "free_y")
+
+```
+
+
+If change PA Dx from 3 to 5:
+```{r pa_dx_1_to_7_plt_PPV_sensitivity}
+all_pa_dx_C_list_N <- lapply(1:7, function(x){foo(rar_mg, PA_Dx_C = x)})
+all_pa_dx_C_N <- do.call(rbind, all_pa_dx_C_list_N)
+
+all_pa_dx_C_N %>% filter(variable == "pp_on_PA_p" | variable == "pp_on_RAR_p") %>%
+  mutate(variable = factor(variable, labels=c("P(Dx+ & Lab+|Dx+)", "P(Dx+ & Lab+|Lab+)"))) %>%
+  ggplot(.) + 
+  geom_line(aes(x=RAR_Criteria, y = value, group=PA_Dx_N_Criteria, color=as.factor(PA_Dx_N_Criteria))) + 
+  geom_point(aes(x=RAR_Criteria, y = value, group=PA_Dx_N_Criteria, color=as.factor(PA_Dx_N_Criteria))) + 
+  labs(x="RAR Criteria", y= "Percentage") + 
+  guides(color=guide_legend(title="# of PA Dx as Criterion")) + 
+  scale_y_continuous(labels=percent) + facet_wrap(~variable, nrow = 2, scales = "free_y")
+
+```
+Take a look at patients in different Lab(+/-)/Dx(+/-) groups:
+```{r pa_dx_1_2_3_plt_pts}
+all_pa_dx_C %>% filter(variable %in% c("PA_p_RAR_p", "PA_n_RAR_n","PA_p_RAR_n","PA_n_RAR_p")) %>%
+  mutate(variable = factor(variable, levels=c("PA_p_RAR_p", "PA_n_RAR_n","PA_p_RAR_n","PA_n_RAR_p"),
+                           labels=c("Dx+ & Lab+","Dx- & Lab-","Dx+ & Lab-","Dx- & Lab+"))) %>%
+  ggplot(.) + 
+  geom_bar(aes(x=variable, y = value, fill=as.factor(RAR_Criteria)), position='dodge', stat = 'identity') + 
+  theme(axis.text.x = element_text(angle=90)) + 
+  facet_wrap(~ PA_Dx_N_Criteria) + 
+  labs(x="RAR Criteria", y= "Number of Patients", title="Number of Patients in different PA Dx Criteria and Lab RRA Criteria") + 
+  theme(plot.title = element_text(hjust=0.5))
+```
+The {PA-, RAR-} group is always the highest, so remove it for a better view on others:
+```{r pa_dx_1_2_3_plt_pts_no_tn}
+all_pa_dx_C %>% filter(variable %in% c("PA_p_RAR_p","PA_p_RAR_n","PA_n_RAR_p")) %>%
+  mutate(variable = factor(variable, levels=c("PA_p_RAR_p", "PA_n_RAR_n","PA_p_RAR_n","PA_n_RAR_p"),
+                           labels=c("Dx+ & Lab+","Dx- & Lab-","Dx+ & Lab-","Dx- & Lab+"))) %>%
+  ggplot(.) + 
+  geom_bar(aes(x=variable, y = value, fill=as.factor(RAR_Criteria)), position='dodge', stat = 'identity') + 
+  theme(axis.text.x = element_text(angle=90)) + 
+  facet_wrap(~ PA_Dx_N_Criteria) + 
+  labs(x="RAR Criteria", y= "Number of Patients", title="Number of Patients in different PA Dx Criteria and Lab RRA Criteria") + 
+  theme(plot.title = element_text(hjust=0.5))
+```
+
+```{r pa_dx_1_2_3_plt_pts_no_tn_change}
+all_pa_dx_C_N %>% filter(variable %in% c("PA_p_RAR_p","PA_p_RAR_n","PA_n_RAR_p")) %>%
+  mutate(variable = factor(variable, levels=c("PA_p_RAR_p", "PA_n_RAR_n","PA_p_RAR_n","PA_n_RAR_p"),
+                           labels=c("Dx+ & Lab+","Dx- & Lab-","Dx+ & Lab-","Dx- & Lab+"))) %>%
+  ggplot(.) + 
+  geom_bar(aes(x=RAR_Criteria, y = value, fill=as.factor(PA_Dx_N_Criteria)), position='dodge', stat = 'identity') + 
+  theme(axis.text.x = element_text(angle=90)) + 
+   facet_wrap(~ variable) + 
+  labs(x="RAR Criteria", y= "Number of Patients", title="Number of Patients in different PA Dx Criteria and Lab RRA Criteria") + 
+  theme(plot.title = element_text(hjust=0.5))
+```
+
+Another question is what is the union of PA+ and RAR+, according to different criterias:
+```{r PA_Dx_union_RAR_plt_by_Dx}
+all_pa_dx_C_N %>% filter(variable %in% c("PA_p_RAR_p","PA_p_RAR_n","PA_n_RAR_p")) %>%
+  group_by(PA_Dx_N_Criteria, RAR_Criteria) %>%
+  summarise(PA_union_Dx = sum(value)) %>%
+  ggplot(.) + 
+  geom_bar(aes(x=as.factor(PA_Dx_N_Criteria), y = PA_union_Dx, fill=as.factor(RAR_Criteria)), position='dodge', stat = 'identity') + 
+  theme(axis.text.x = element_text(angle=90)) + 
+  labs(x="Dx Criteria", y= "Number of Patients", title="Number of Patients in Dx+ or Lab+") + 
+  theme(plot.title = element_text(hjust=0.5))
+```
+
+```{r PA_Dx_union_RAR_plt_by_RAR}
+all_pa_dx_C_N %>% filter(variable %in% c("PA_p_RAR_p","PA_p_RAR_n","PA_n_RAR_p", "PA_n_RAR_n")) %>%
+  mutate(v = ifelse(variable %in% c("PA_p_RAR_p","PA_p_RAR_n","PA_n_RAR_p"), "P","N")) %>%
+  group_by(PA_Dx_N_Criteria, RAR_Criteria, v) %>%
+  summarise(PA_union_Dx = sum(value)) %>% ungroup() %>%
+  group_by(PA_Dx_N_Criteria, RAR_Criteria) %>%
+  mutate(N = sum(PA_union_Dx)) %>%
+  filter(v == "P") %>%
+  mutate(PA_union_Dx_percent = PA_union_Dx/N) %>%
+  ggplot(.) + 
+  geom_bar(aes(x=as.factor(PA_Dx_N_Criteria), y = PA_union_Dx_percent, fill=as.factor(RAR_Criteria)), position='dodge', stat = 'identity') + 
+  theme(axis.text.x = element_text(angle=90)) + 
+  labs(x="Dx Criteria", y= "Percentage of Patients", title="Percentage of Patients in Dx+ or Lab+") + 
+  theme(plot.title = element_text(hjust=0.5)) + scale_y_continuous(labels=percent)
+```
+```{r PA_Dx_union_RAR_plt_by_PA}
+all_pa_dx_C_N %>% filter(variable %in% c("PA_p_RAR_p","PA_p_RAR_n","PA_n_RAR_p")) %>%
+  group_by(PA_Dx_N_Criteria, RAR_Criteria) %>%
+  summarise(PA_union_Dx = sum(value)) %>%
+  ggplot(.) + 
+  geom_bar(aes(x=as.factor(RAR_Criteria), y = PA_union_Dx, fill=as.factor(PA_Dx_N_Criteria)), position='dodge', stat = 'identity') + 
+  theme(axis.text.x = element_text(angle=90)) + 
+  labs(x="RAR Criteria", y= "Number of Patients", title="Number of Patients in Dx+ | Lab+") + 
+  theme(plot.title = element_text(hjust=0.5))
+```
+The two plots above show that the number of patients in {PA+ or RAR+} is increasing when we change RAR Criteria from Strict to Lax for a specific PA Criteria; but for a specific RAR Criteria, the number of patients in {PA+ or RAR+} is decreasing when we increase the PA Criteria.
+
+##### Who are discordant patients? -- RAR Strict + but only 0 or 1 PA Dx 
+0/1 PA Dx:
+```{r discordant_0_1_Dx}
+rar_mg %>% group_by(EMPI) %>%
+  summarise(RAR_Strict_criteria = (true_false_NA(Aldo >= 15 & PRA <= 0.5 & Aldo/PRA >= 30)),
+            PA_Dx_C = (sum(Dx_h1_Primary_aldosteronism, na.rm=TRUE))) %>%
+  ungroup() %>%
+  filter(PA_Dx_C <= 1 & RAR_Strict_criteria)
+```
+
+
+
+#### Integrate with RDB
+```{r pa_dx_RDB_tb, cache.lazy=FALSE}
+# use the last record in DB as end date for right censoring
+db_end_time <- as.Date("2015-10-01")
+
+rar_mg_db <- rar_mg %>% filter(ENC_DATE <= db_end_time)
+```
+
+
+
+#### How many of the >1-PA-Dx patients have more than 2 encs? How many of them are in for >= 2 years? {-}
+For these patients, `r nrow(pa_dx_pts %>% filter(enc_n >= 3))` have more than 2 encounters (all of them). And `r nrow(pa_dx_pts %>% filter(time_in_sys_yr >= 2))` of them have $\geqslant$ 2 years in UPHS system.   
+In general, the encounters of them are:
+```{r pa_dx_encs_hist}
+ggplot(pa_dx_pts) + geom_histogram(aes(enc_n), bins=100) +
+  labs(x = "Number of Encounters", y= "Count for Patients")
+```
+the range for number of encounters are:
+```{r pa_dx_enc_sum}
+summary(pa_dx_pts$enc_n)
+```
+As for the years, here is the summary:
+```{r pa_dx_yr_sum}
+summary(pa_dx_pts$time_in_sys_yr)
+```
+The density plot below is not as skewed as encounter plot:
+```{r pa_dx_yr_hist}
+ggplot(pa_dx_pts) + geom_density(aes(time_in_sys_yr)) +
+  labs(x = "Years in System", y= "Density for Patients")
+```
+For time and encounter:
+```{r pa_dx_yr_enc}
+ggplot(pa_dx_pts) + geom_point(aes(x = time_in_sys_yr, y = enc_n, color = ifelse(time_in_sys_yr <= 1, "red", "blue")), alpha=0.5) + scale_color_identity()
+```
+red dots are patients whose Time in System is less than 1 year. All of them are in left bottom cornoer, which means their encounters are also low, less than 50:
+```{r pa_dx_yr_enc_1_yr}
+pa_dx_pts %>% filter(time_in_sys_yr <= 1) %>%
+  ggplot(.) + geom_point(aes(x = time_in_sys_yr, y = enc_n), alpha=0.5) + scale_color_identity()
+```
+
+
+### Intersection with RDB
+In total, there are `r sum(pts$PA_AVS_tot_0115)` patients in Research Data Base. Among them, `r sum(pa_dx_pts$PA_AVS_tot_0115)` (`r percent(sum(pa_dx_pts$PA_AVS_tot_0115)/sum(pts$PA_AVS_tot_0115))`) are in >1-Dx Group, which is only `r percent(nrow(pa_dx_EMPI)/nrow(pts))` of all patients. The popularity for each group is `r percent(sum(pa_dx_pts$PA_AVS_tot_0115==TRUE)/nrow(pa_dx_pts))` vs `r percent(nrow(not_pa_dx_pts %>% filter(PA_AVS_tot_0115))/nrow(not_pa_dx_pts))`, shown in plot:
+```{r RDB_pa_dx_vs_non_pa_dx_plt}
+pts %>% ungroup() %>% select(Dx_h1_Primary_aldosteronism_n, PA_AVS_tot_0115) %>%
+  mutate(Dx_more_than_2 = Dx_h1_Primary_aldosteronism_n>=2) %>%
+  group_by(Dx_more_than_2, PA_AVS_tot_0115) %>%
+  summarise(N=n()) %>% ungroup() %>%
+  group_by(Dx_more_than_2) %>%
+  mutate(popularity = ifelse(PA_AVS_tot_0115, percent(N/sum(N)), NA)) %>%
+  ggplot(.) + geom_bar(aes(x=Dx_more_than_2, y=N, fill=PA_AVS_tot_0115),stat="identity") + 
+  geom_text(aes(x=Dx_more_than_2, y=N+200, label=popularity)) + 
+  geom_text(aes(x=Dx_more_than_2, y=N+450, label=ifelse(PA_AVS_tot_0115, N, NA)))
+```
+
+
+#### What are differences between Dx_less_than_2 and Dx_greater_than_2 groups? {-}
+Time in system?
+```{r time_in_sys_Dx_2}
+summary(pa_dx_pts$time_in_sys_yr)
+summary(not_pa_dx_pts$time_in_sys_yr)
+wilcox.test(pa_dx_pts$time_in_sys_yr, not_pa_dx_pts$time_in_sys_yr)
+```
+Time to 1st RAR test?
+```{r time_to_1st_RAR_yr_Dx_2}
+summary(pa_dx_pts$time_to_1st_RAR_yr)
+summary(not_pa_dx_pts$time_to_1st_RAR_yr)
+wilcox.test(pa_dx_pts$time_to_1st_RAR_yr, not_pa_dx_pts$time_to_1st_RAR_yr)
+```
+Note that for patients with more than 1 PA Dx, `r sum(is.na(pa_dx_pts$time_to_1st_RAR_yr))` of them do not have RAR test. In contratry, there are `r sum(is.na(not_pa_dx_pts$time_to_1st_RAR_yr))` in the other group. This means most RAR tests were performed on 1st PA Dx. (?)
+
+More here...
+
+
+
+The TRUE for RDB seem distributed everywhere...
+```{r pa_dx_RDB_plt}
+ggplot(pa_dx_pts) + geom_point(aes(x = time_in_sys_yr, y = enc_n, group=PA_AVS_tot_0115, color=PA_AVS_tot_0115), alpha=0.8) 
+```
+
+
+
+
+
+
+##### Different Intersection on 1-year criteria {-}
+```{r split_on_1_yr}
+pa_dx_1_yr <- pa_dx_pts %>% filter(time_in_sys_yr <= 1)
+pa_dx_greater_1_yr <- pa_dx_pts %>% filter(time_in_sys_yr > 1)
+```
+
+
+```{r RDB_1_yr_vs_grt_1_yr_plt}
+pa_dx_pts %>% ungroup() %>% select(Dx_h1_Primary_aldosteronism_n, PA_AVS_tot_0115, time_in_sys_yr) %>%
+  mutate(Yr_greater_1_yr = time_in_sys_yr>=1) %>%
+  group_by(Yr_greater_1_yr, PA_AVS_tot_0115) %>%
+  summarise(N=n()) %>% ungroup() %>%
+  group_by(Yr_greater_1_yr) %>%
+  mutate(popularity = ifelse(PA_AVS_tot_0115, percent(N/sum(N)), NA)) %>%
+  ggplot(.) + geom_bar(aes(x=Yr_greater_1_yr, y=N, fill=PA_AVS_tot_0115),stat="identity") + 
+  geom_text(aes(x=Yr_greater_1_yr, y=N+100, label=popularity))
+```
+This plot shows that the RDB proportion is almost as twice higher in 1-year patient group than that in more-than-1-year group. Does this result from different time-to-1st-RAR tests?
 
 
 
@@ -47,1012 +742,4 @@ ggplot(pts) + geom_histogram(aes(time_to_1st_RAR_yr))
 ggplot(pts) + geom_point(aes(x=(time_in_sys_yr*365.25), y = (time_to_1st_RAR_yr*365.25)), alpha=0.4)
 ggplot(pts) + geom_point(aes(x=(time_in_sys_yr*365.25), y = (time_to_1st_RAR_yr*365.25),color=ifelse(enc_n > 10, "blue", "red")), alpha=0.4) + xlim(0, 5000) + ylim(0, 5000) + scale_color_identity()
 ```
-
-
-
-
-# Minimal Validation
-The goal here is to do a minimal validation on the cleaned data (v0.2), including:
-    + Spot checking ~5 patients by their EMPI
-    + Randomly checking ~5 EMPI_DATE
-Select some EMPI_DATE with RAR tests. Also pick some random EMPI_DATE.
-```{r min_valid, eval=FALSE}
-rar_mg %>% filter(is.na(Aldo)+is.na(PRA)+is.na(DRC)==0) %>% 
-  print.data.frame()
-```
-Spot checked. *chart_review_bios_v2.txt*
-
-##### NOTE: {-}
-According to data generation step, all EMPI_DATE in rar_enc are OUTPATIENT, and they are all included in rar_mg. Besides, there are a few more in rar_mg that are not OUTPATIENT [`r length(unique(setdiff(rar_mg$EMPI_DATE, rar_enc$EMPI_DATE)))` EMPI_DATE's]; these EMPI_DATE's are all from Labs. The reason for that is when joining labs and encounter data, a full join is used, and in labs data, we used all information there. For now, remove them from rar_mg (This should be fixed in next version 0.2.1):
-```{r only_OUTPATIENT, cache.lazy=FALSE}
-tpp <- setdiff(rar_mg$EMPI_DATE, rar_enc$EMPI_DATE)
-rar_mg<- rar_mg %>% filter(!(EMPI_DATE %in% tpp))
-```
-
-
-# Descriptive Statistics on all variables (min, max, mean, median), figures, find outliers
-Encounter Dates:
-```{r enc_dt}
-summary(rar_enc$ENC_DATE)
-```
-```{r cumulative_enc}
-rar_enc %>% select(ENC_DATE) %>%
-  group_by(ENC_DATE) %>%
-  summarise(N=n()) %>%
-  ggplot(.) + geom_point(aes(x=ENC_DATE, y=cumsum(N)/sum(N)))
-```
-After we zoom in to 1970 - 1999:
-```{r enc_ct_zoom_in_CDF}
-
-rar_enc %>% select(ENC_DATE) %>%
-  group_by(ENC_DATE) %>%
-  summarise(N=n()) %>%
-  ggplot(.) + geom_point(aes(x=ENC_DATE, y=cumsum(N)/sum(N))) + 
-  xlim(as.POSIXct(c("1970-01-01", "1999-01-01"))) +
-  ylim(0, 0.0015)
-
-
-```
-```{r enc_ct_zoom_in}
-rar_enc %>% select(ENC_DATE) %>%
-  mutate(Month = as.Date(cut(ENC_DATE, breaks='month'))) %>%
-  filter(ENC_DATE <= as.Date("1999-01-01") & ENC_DATE >= as.Date("1970-01-01")) %>%
-  group_by(Month) %>%
-  summarise(N=n()) %>%
-  ggplot(.) + geom_point(aes(x=Month, y=N)) + labs(x="Time by Month", y = "Encounters", title="Encounters Per Month (1970 - 1999") +
-  theme(plot.title = element_text(hjust=0.5))
-
-```
-Find the first month there were 4 records:
-```{r enc_ct_zoom_in_tb}
-rar_enc %>% select(ENC_DATE) %>%
-  filter(ENC_DATE <= as.Date("1999-01-01") & ENC_DATE >= as.Date("1970-01-01")) %>%
-  group_by(ENC_DATE) %>%
-  summarise(N=n()) %>%
-  filter(N == 4) %>%
-  arrange(ENC_DATE)
-
-```
-which is 1996-09-11. And the ENC_DATE for lab and Dx:
-```{r enc_dt_lab_dx}
-summary(lab_all$ENC_DATE)
-summary(as.Date(substr(dx_all$EMPI_DATE, 12, 21)))
-```
-The first records for Lab and Dx are all after 1996-09-11. 
-
-##### NOTE: {-}
-Based on this, filter out encounters after 1996-09-01, and this will cover `r sum(rar_enc$ENC_DATE >= as.Date("1996-09-01"))/nrow(rar_enc)` of encounters:
-```{r filter_on_time}
-begin_time <- as.Date("1996-09-01")
-rar_enc %<>% filter(ENC_DATE >= begin_time)
-rar_mg %<>% filter(ENC_DATE >= begin_time)
-pts %<>% filter(ENC_DATE >= begin_time)
-```
-
-
-
-Tests
-```{r lab_long, cache.lazy=FALSE}
-lab_long <- melt(lab_all[,grepl("Test|Aldo|DRC|PRA", names(lab_all))], na.rm = TRUE)
-
-```
-
-```{r lab_box, fig.width=25, fig.height=25}
-lab_long %>% ggplot(., aes(value)) +
-  geom_density() +
-  facet_wrap(~variable, scales="free") + labs(title="Lab Test Result Distribution (Density)") + 
-  theme(plot.title = element_text(hjust = 0.5, size=20))
-```
-Blood Pressures:
-
-```{r bp_long}
-bp_long <- melt(rar_mg[,c('BP_SYSTOLIC', 'BP_DIASTOLIC')], variable.name="BP", value.name = "BP_Value", na.rm = TRUE)
-```
-
-```{r bp_boxplot}
-ggplot(bp_long) + geom_boxplot(aes(x=factor(0), y = BP_Value)) +
-  facet_wrap(~BP) + 
-  labs(title="Blood Pressure Values") + 
-  theme(plot.title = element_text(hjust = 0.5, size=20), axis.title.x=element_blank(), axis.text.x = element_blank())
-```
-
-
-For the patients in the cohort:
-```{r pts_demo}
-rar_demo %>% select("GENDER_MASTER_CODE", 'BIRTH_DATE', 'RACE_MASTER_CODE', 'RACE_MASTER_HISPANIC_YN') %>%
-  mutate(RACE_MASTER_HISPANIC_YN = ifelse(RACE_MASTER_HISPANIC_YN == 0, FALSE, TRUE)) %>%
-  summary()
-```
-For ages at RAR tests:
-```{r age_at_rar, fig.width=15, fig.height=10}
-ggplot(pts, aes(Age)) +
-  geom_density() +
-  labs(title="Patients' Age on RAR Test Date") + 
-  theme(plot.title = element_text(hjust = 0.5, size=20))
-
-```
-
-Categorical Variables:
-```{r ADMIT_SOURCE}
-rar_mg %>% group_by(ADMIT_SOURCE) %>%
-  summarise(N=n()) %>%
-  knitr::kable("html") %>%
-  kableExtra::kable_styling(bootstrap_options = c("striped", "hover"))
-```
-```{r ENCOUNTER_SUB_TYPE, rows.print=10}
-rar_mg %>% group_by(ENCOUNTER_SUB_TYPE) %>%
-  summarise(N=n()) %>% arrange(desc(N))
-```
-```{r ROLE_ADMIT, rows.print=10}
-rar_mg %>% group_by(ROLE_ADMIT) %>%
-  summarise(N=n()) %>% arrange(desc(N))
-```
-```{r DISCIPLINE_ADMIT, rows.print=10}
-rar_mg %>% group_by(DISCIPLINE_ADMIT) %>%
-  summarise(N=n()) %>% arrange(desc(N))
-```
-```{r ENC_TYPE_CODE, rows.print=10}
-rar_mg %>% group_by(ENC_TYPE_CODE) %>%
-  summarise(N=n()) %>% arrange(desc(N))
-```
-```{r ENC_TYPE_MASTER_CODE, rows.print=10}
-rar_mg %>% group_by(ENC_TYPE_MASTER_CODE) %>%
-  summarise(N=n()) %>% arrange(desc(N))
-```
-```{r MASTER_LOCATION_DESCRIPTION, rows.print=10}
-rar_mg %>% group_by(MASTER_LOCATION_DESCRIPTION) %>%
-  summarise(N=n()) %>% arrange(desc(N))
-```
-```{r MASTER_LOCATION_ENTITY, rows.print=10}
-rar_mg %>% group_by(MASTER_LOCATION_ENTITY) %>%
-  summarise(N=n()) %>% arrange(desc(N))
-```
-```{r SERVICE_MASTER_DESCRIPTION, rows.print=10}
-rar_mg %>% group_by(SERVICE_MASTER_DESCRIPTION) %>%
-  summarise(N=n()) %>% arrange(desc(N))
-```
-
-
-# Basic numbers
-## Number of Patients
-There are `r length(unique(rar_demo$EMPI))` patients (by EMPI)(`r sum(rar_demo$GENDER_MASTER_CODE == "F", na.rm = TRUE)` females, `r sum(rar_demo$GENDER_MASTER_CODE == "M", na.rm = TRUE)` males)
-### By entity
-Patients by entity and gender (ENTITY is the patient's RAR Test or some recent one):
-```{r pts_by_entity}
-ggplot(pts, aes(MASTER_LOCATION_ENTITY, fill=GENDER_MASTER_CODE)) + geom_bar() + 
-  labs(y="Number of Patients",title="Number of Patients by ENTITY  (RAR Tests)") + 
-  theme(plot.title = element_text(hjust = 0.5, size=20))
-```
-
-### By location
-```{r pts_by_loc}
-
-ggplot(pts, aes(MASTER_LOCATION_DESCRIPTION)) + geom_bar() +
-  labs(y="Number of Patients",title="Number of Patients by Master Location") + 
-  theme(plot.title = element_text(hjust = 0.5, size=20), axis.text.x = element_blank())
-```
-
-```{r pts_loc_highest}
-pts %>% group_by(MASTER_LOCATION_DESCRIPTION) %>%
-  summarise(N=n()) %>%
-  arrange(desc(N))
-```
-
-### By month, total number
-Count how many patients in each month, i.e., how many patient "showed up" in that month, so there are some patient may be counted twice or more:
-```{r pts_month}
-rar_mg %>% select(EMPI, ENC_DATE) %>%
-  mutate(Month = as.Date(cut(ENC_DATE, breaks='month'))) %>%
-  group_by(Month) %>%
-  summarise(N = n_distinct(EMPI)) %>%
-  ggplot(., aes(x=Month, y=N)) + geom_point() + geom_smooth(method = "loess") +
-  labs(x = "Time by Month", y="Number of Shown Patients",title="Number of Patients by By Month") + 
-  theme(plot.title = element_text(hjust = 0.5, size=20))
-```
-
-
-### By month, new patients (first encounter)
-```{r new_pts}
-rar_mg %>% select(EMPI, ENC_DATE) %>%
-  group_by(EMPI) %>%
-  summarise(First_Date = min(ENC_DATE)) %>%
-  mutate(Month = as.Date(cut(First_Date, breaks='month'))) %>%
-  group_by(Month) %>%
-  summarise(N = n_distinct(EMPI)) %>%
-  ggplot(., aes(x=Month, y=N)) + geom_point() + geom_line() +
-  labs(x = "Time by Month", y="Number of New Patients",title="Number of New Patients by By Month") + 
-  theme(plot.title = element_text(hjust = 0.5, size=20))
-```
-By this plot, there is a month that has a jump: 2002-01-01.
-
-
-
-```{r new_pts_by_entity}
-rar_mg %>% select(EMPI, ENC_DATE, MASTER_LOCATION_ENTITY) %>%
-  group_by(EMPI) %>%
-  arrange(ENC_DATE) %>%
-  slice(1) %>%
-  mutate(Month = as.Date(cut(ENC_DATE, breaks='month'))) %>%
-  group_by(Month, MASTER_LOCATION_ENTITY) %>%
-  summarise(N = n_distinct(EMPI)) %>%
-  ggplot(., aes(x=Month, y=N)) + geom_point() + geom_line() +
-  facet_wrap(~MASTER_LOCATION_ENTITY) + 
-  labs(x = "Time by Month", y="Number of New Patients",title="Number of New Patients by By Month by Entity") + 
-  theme(plot.title = element_text(hjust = 0.5, size=20))
-```
-CCA, CPUP and PMC are getting new patients in a stable rate. HUP and PAH only have new new patients after 2010.
-
-
-### Where is PCP? (don't have data currently...)
-TBA
-
-## Number of Encounters
-There are in total `r nrow(rar_enc)` encounters (EMPI_DATE). 
-
-### By entity
-```{r enc_by_entity}
-rar_enc %>% 
-  group_by(MASTER_LOCATION_ENTITY) %>%
-  summarise(N=n()) %>%
-  ggplot(.) + geom_bar(aes(x=MASTER_LOCATION_ENTITY, y=N), stat="identity", fill="blue", alpha=0.5) + 
-  geom_text(aes(x=MASTER_LOCATION_ENTITY, y = N + 50000, label=N)) +
-  labs(x = "ENTITY", y="Number of Encounters",title="Number of New Patients by By Month by Entity") + 
-  theme(plot.title = element_text(hjust = 0.5, size=20))
-```
-CPUP receives most patients, followed by CCA. CPUP includes the most locations (half of all locs):
-```{r CPUP_loc}
-dim(unique((rar_enc[which(rar_enc$MASTER_LOCATION_ENTITY == "CPUP"), "MASTER_LOCATION_DESCRIPTION"])))
-```
-
-If we take Time in to account:
-```{r enc_by_entity_month, fig.width=20, fig.height=10}
-rar_enc %>% mutate(DATE = as.Date(cut(ENC_DATE, breaks="month"))) %>%
-  group_by(DATE, MASTER_LOCATION_ENTITY) %>%
-  summarise(N_ENC = n()) %>% ungroup() %>%
-  ggplot(.) + geom_point(aes(x=DATE, y = N_ENC, group=MASTER_LOCATION_ENTITY, color=MASTER_LOCATION_ENTITY)) +
-  geom_line(aes(x=DATE, y = N_ENC, group=MASTER_LOCATION_ENTITY, color=MASTER_LOCATION_ENTITY)) + 
-  labs(x = "Date", y = "Total Encounters", title="Total Encounters by Month in Different Entities") + 
-  theme(plot.title = element_text(hjust = 0.5, size=20))
-
-```
-
-### by patient (?how many different entities is patient visiting? Can I assign patient to an entity?)
-In general, the average encounters by patient is:
-```{r avg_encs}
-rar_enc %>% group_by(EMPI) %>%
-  summarise(N=n()) %>%
-  ggplot(.) + geom_boxplot(aes(factor(0),N)) +
-  labs(y="Number of Encounters", title="Encounters per Patient") + 
-  theme(plot.title = element_text(hjust = 0.5, size=20), axis.title.x=element_blank(), axis.text.x = element_blank())
-
-```
-The encounters per patient is quite skewed. Some patients has >1000 encounters. According to the summary, the majority (~ 75th Quantile)
-```{r}
-rar_enc %>% group_by(EMPI) %>%
-  summarise(N=n()) %>% 
-  summary()
-  
-```
-
-
-How many different entities a patient has visited:
-```{r patient_entity_ct}
-table(rar_enc %>% group_by(EMPI) %>%
-  summarise(N = n_distinct(MASTER_LOCATION_ENTITY)) %>%
-    select(N))
-```
-
-```{r pt_enc_by_entity_tb, eval=FALSE}
-rar_enc %>% group_by(EMPI, MASTER_LOCATION_ENTITY) %>%
-  summarise(N = n())
-```
-Some of the patients seem to have a primary entity to go. But for some patients, there's no big difference in number of encounters by entity.
-
-
-
-### By location
-There are around 10 locations that have the most encounters:
-```{r enc_ct_by_loc_tb}
-rar_enc %>%
-  group_by(MASTER_LOCATION_DESCRIPTION) %>%
-  summarise(N=n()) %>%
-  arrange(desc(N))
-```
-
-```{r enc_ct_by_loc}
-rar_enc %>% select(MASTER_LOCATION_DESCRIPTION) %>%
-  group_by(MASTER_LOCATION_DESCRIPTION) %>%
-  summarise(N=n()) %>%
-  ggplot(., aes(x=MASTER_LOCATION_DESCRIPTION, y=N)) + geom_bar(stat = "identity") +
-  geom_label(aes(label=ifelse(N >= 20000, MASTER_LOCATION_DESCRIPTION, NA)), size = 2) +
-  labs(y="Number of Patients",title="Number of Patients by Master Location") + 
-  theme(plot.title = element_text(hjust = 0.5, size=20), axis.text.x = element_blank())
-```
-
-
-#### by patient (?how many different locations is patient visiting? Can I assign patient to a location?)
-How many different entities a patient has visited:
-```{r patient_loc_ct}
-table(rar_enc %>% group_by(EMPI) %>%
-  summarise(N = n_distinct(MASTER_LOCATION_DESCRIPTION)) %>%
-    select(N))
-```
-
-There are more than 1000 locatioins, the patient with most different locations only visited 112.
-
-```{r enc_loc_pt, eval=FALSE}
-rar_enc %>% group_by(EMPI, MASTER_LOCATION_DESCRIPTION) %>%
-  summarise(N = n())
-```
-If we say a Primary Location is the place that have more than 50% encounters for a specific patient:
-```{r dominant_loc, eval=FALSE}
-rar_enc %>% group_by(EMPI, MASTER_LOCATION_DESCRIPTION) %>%
-  summarise(N = n()) %>% ungroup() %>%
-  group_by(EMPI) %>%
-  mutate(tot_N = sum(N), ENC_Percent = N/tot_N) %>%
-  filter(ENC_Percent >= 0.5)
-  
-```
-
-then after viewing this, 2600+ patients have a Primary Location.   
-For these locations, there are 176 of them:
-```{r primary_loc_ls}
-rar_enc %>% group_by(EMPI, MASTER_LOCATION_DESCRIPTION) %>%
-  summarise(N = n()) %>% ungroup() %>%
-  group_by(EMPI) %>%
-  mutate(tot_N = sum(N), ENC_Percent = N/tot_N) %>%
-  filter(ENC_Percent >= 0.5) %>% ungroup() %>%
-  group_by(MASTER_LOCATION_DESCRIPTION) %>%
-  summarise(N=n()) %>%
-  arrange(desc(N))
-```
-
-
-### By month (total number)
-```{r tot_enc_month}
-rar_mg %>% select(EMPI, ENC_DATE) %>%
-    mutate(Month = as.Date(cut(ENC_DATE, breaks='month'))) %>%
-  group_by(Month) %>%
-  summarise(N = n()) %>%
-  ggplot(., aes(x=Month, y=N)) + geom_point() + geom_line() +
-  geom_smooth(method = "loess") +
-  labs(x = "Time by Month", y="Number of Encounters",title="Number of Total Encounters by By Month") + 
-  theme(plot.title = element_text(hjust = 0.5, size=20))
-```
-The trend is going on. Also we can observe a small jump on 2002-01-01.
-
-### By visit type
-```{r tot_enc_visit_type_mstr}
-
-rar_mg %>% select(EMPI, ENC_TYPE_MASTER_CODE) %>%
-  group_by(ENC_TYPE_MASTER_CODE) %>%
-  summarise(N = n()) %>%
-  ggplot(., aes(x=ENC_TYPE_MASTER_CODE, y=N)) + 
-  geom_bar(stat="identity") +
-  geom_label(aes(y=N+20000, label=ifelse(N>50000, ENC_TYPE_MASTER_CODE, NA)), angle=45) + 
-  labs(x = "Encounter Type (MASTER CODE)", y="Number of Encounters",title="Number of Total Encounters by By Visit Type") + 
-  theme(plot.title = element_text(hjust = 0.5, size=20), axis.text.x = element_blank())
-```
-By visit type, `PHONE, OFFICE VISIT, APPOINTMENT, ORDERS, REFILL` have the most encounters.   
-In a version of detailed codes:
-```{r tot_enc_visit_type}
-rar_mg %>% select(EMPI, ENC_TYPE_CODE) %>%
-  group_by(ENC_TYPE_CODE) %>%
-  summarise(N = n()) %>%
-  ggplot(., aes(x=ENC_TYPE_CODE, y=N)) + 
-  geom_bar(stat="identity") +
-  geom_label(aes(y=N+20000, label=ifelse(N>50000, ENC_TYPE_CODE, NA)), angle=45) + 
-  labs(x = "Encounter Type (MASTER CODE)", y="Number of Encounters",title="Number of Total Encounters by By Visit Type") + 
-  theme(plot.title = element_text(hjust = 0.5, size=20), axis.text.x = element_blank())
-```
-The result on a detailed version of ENC_TYPE agrees with that in MASTER CODE.   
-
-
-Take a look at encounters by Admitting Source:
-```{r tot_enc_adm_source}
-rar_mg %>% select(EMPI, ADMIT_SOURCE) %>%
-  group_by(ADMIT_SOURCE) %>%
-  summarise(N = n()) %>%
-  ggplot(., aes(x=ADMIT_SOURCE, y=N)) + 
-  geom_bar(stat="identity", fill="blue", alpha=0.5) +
-  #geom_label(aes(y=N+20000, label=ifelse(N>50000, ADMIT_SOURCE, NA)), angle=45) + 
-  labs(x = "ADMIT_SOURCE", y="Number of Encounters",title="Number of Total Encounters by By Admitting Source") + 
-  theme(plot.title = element_text(hjust = 0.5, size=20))
-```
-Removing NA:
-```{r tot_enc_adm_source_rm_NA}
-rar_mg %>% select(EMPI, ADMIT_SOURCE) %>%
-  filter(!is.na(ADMIT_SOURCE)) %>%
-  group_by(ADMIT_SOURCE) %>%
-  summarise(N = n()) %>%
-  ggplot(., aes(x=ADMIT_SOURCE, y=N)) + 
-  geom_bar(stat="identity", fill="blue", alpha=0.5) +
-  #geom_label(aes(y=N+20000, label=ifelse(N>50000, ADMIT_SOURCE, NA)), angle=45) + 
-  labs(x = "ADMIT_SOURCE", y="Number of Encounters",title="Number of Total Encounters by By Admitting Source (NA removed)") + 
-  theme(plot.title = element_text(hjust = 0.5, size=20))
-```
-
-#### By vist type, by month
-```{r tot_enc_visit_type_mstr_month}
-rar_mg %>% select(ENC_DATE, ENC_TYPE_MASTER_CODE) %>%
-  mutate(Month = as.Date(cut(ENC_DATE, breaks="month"))) %>%
-  group_by(Month, ENC_TYPE_MASTER_CODE) %>%
-  summarise(N=n()) %>%
-  ggplot(., aes(x=Month, y=N, group=ENC_TYPE_MASTER_CODE, color=ENC_TYPE_MASTER_CODE)) +
-  geom_line() + theme(legend.position="none") + 
-  labs(x = "Time by Month", y="Number of Encounters",title="Number of Total Encounters by By Visit Type along Time") + 
-  theme(plot.title = element_text(hjust = 0.5, size=20))
-
-```
-If we only select `PHONE, OFFICE VISIT, APPOINTMENT, ORDERS, REFILL`, also including `HEALTH MAINTENANCE`:
-```{r tot_enc_visit_type_mstr_month_part}
-rar_mg %>% select(ENC_DATE, ENC_TYPE_MASTER_CODE) %>%
-  filter(ENC_TYPE_MASTER_CODE %in% c('PHONE', 'OFFICE VISIT', 'APPOINTMENT', 'ORDERS', 'REFILL','HEALTH MAINTENANCE')) %>%
-  mutate(Month = as.Date(cut(ENC_DATE, breaks="month"))) %>%
-  group_by(Month, ENC_TYPE_MASTER_CODE) %>%
-  summarise(N=n()) %>%
-  ggplot(., aes(x=Month, y=N, group=ENC_TYPE_MASTER_CODE, color=ENC_TYPE_MASTER_CODE)) +
-  geom_line()  + 
-  labs(x = "Time by Month", y="Number of Encounters",title="Number of Total Encounters by By Visit Type along Time") + 
-  theme(plot.title = element_text(hjust = 0.5, size=20))
-
-```
-
-
-#### By visit type, by entity
-First take a look at the table between Visit Type and ENTITY:
-```{r}
-table(rar_mg$ENC_TYPE_MASTER_DESCRIPTION, rar_mg$MASTER_LOCATION_ENTITY)
-```
-
-```{r enc_visit_tp_entity, fig.width=25, fig.height=25}
-rar_mg %>% select(ENC_TYPE_MASTER_DESCRIPTION, MASTER_LOCATION_ENTITY) %>%
-  group_by(MASTER_LOCATION_ENTITY, ENC_TYPE_MASTER_DESCRIPTION) %>%
-  summarise(N=n()) %>%
-  ggplot(., aes(x=MASTER_LOCATION_ENTITY, y=N, fill=ENC_TYPE_MASTER_DESCRIPTION)) + 
-  geom_bar( position=position_fill(), stat="identity") + 
-  labs(x = "ENTITY", y="Percentage",title="Percentages of Visit Type in All Entities") + 
-  theme(plot.title = element_text(hjust = 0.5, size=20), legend.position = "bottom")
- 
-```
-
-
-#### By visit type, by location
-### By patient
-#### By patient, by visit type
-```{r}
-rar_mg %>% select(EMPI, ENC_TYPE_MASTER_CODE) %>%
-  # filter(ENC_TYPE_MASTER_CODE %in% c('PHONE', 'OFFICE VISIT', 'APPOINTMENT', 'ORDERS', 'REFILL','HEALTH MAINTENANCE')) %>%
-  group_by(ENC_TYPE_MASTER_CODE) %>%
-  summarise(n_pts = n_distinct(EMPI), n_enc=n()) %>%
-  mutate(avg_enc = n_enc/n_pts) %>%
-  ggplot(., aes(x=ENC_TYPE_MASTER_CODE, y=avg_enc)) + 
-  geom_bar(stat="identity") +
-  geom_label(aes(y=avg_enc+1, label=ifelse(avg_enc>10, ENC_TYPE_MASTER_CODE, NA))) + 
-  labs(x = "Encounter Type (MASTER CODE)", y="Average Encounters (by patient)",title="Personal Average Encounters by By Visit Type") + 
-  theme(plot.title = element_text(hjust = 0.5, size=20), axis.text.x = element_blank())
-```
-This shows a similar trend as total encounters by Encounter Type, except here `ANTICOAGULATION` appears high.
-
-
-
-#### By patient, by month
-
-```{r avg_enc_month}
-rar_mg %>% select(EMPI, ENC_DATE) %>%
-  mutate(Month = as.Date(cut(ENC_DATE, breaks='month'))) %>%
-  group_by(Month) %>%
-  summarise(N = n()/n_distinct(EMPI)) %>%
-  ggplot(., aes(x=Month, y=N)) + geom_point() + geom_line() +
-  geom_smooth(method = "loess") +
-  labs(x = "Time by Month", y="Number of Encounters",title="Number of Total Encounters by By Month") + 
-  theme(plot.title = element_text(hjust = 0.5, size=20))
-```
-Remember there is a jump in 2002, but for average encounters, the jump happened before 2000.
-
-### By race, by visit type
-
-### By gender, by visit type
-
-
-## Factor categories (counts, missingness, how to organize)
-### Goals: (Explore, missingness bias?, consider joining?, different definitions in cross-tabs)
-### Entity
-### Location
-### Race
-### Visit type
-### Gender
-
-
-## Diagnosis codes (Dx)
-### Count
-#### By entity or location
-#### By time
-#### By visit type
-#### By patient
-##### By patient, by time
-#### By ?h1 level
-##### by patient
-##### by patient, by time
-#### How many have PA count >= 2 (??  Dx+   ??)
-
-
-## Labs
-### Count
-### By Test
-#### Count
-##### By entity or location
-##### By time
-##### By race
-##### By gender
-##### By age
-
-
-## BPs
-### Count
-#### By time
-#### By entity or location
-#### By patient
-### By result = HTN (SBP >= 140 | DBP >= 90)  [or quantitative]
-#### By time
-#### By entity or location
-#### By patient
-#### By count (total)
-
-
-
-
-
-
-
-# RAR Tests Basics:
-### Total RAR Tests by entity/locations
-#### by Time
-### Average # of RAR tests per patient
-#### By encounter
-#### By time???
-
-
-
-
-# Correlations among Tests, Dx's (on diffefent levels), Tests & Dx's   
-
-# Basic Statistics on Research DB outcome
-## Characteristics of RDB+ versus RDB- patients
-### Patient count
-### Patient count by entity or location
-### Encounter count by entity/location
-### By patient
-#### Total number of encounters
-#### Time interval prior to first RAR test
-#### Time interval prior to first Dx code
-     
-
-# RAR Tests on Strict Criteria ???? RAR criteria
-## How many encounters/patients meet the criteria? Any difference in using 3 and 2 of criterias
-### What characteristics? - esp: BP, potassium
-## Explore potential predictors of first encounters in which patient meets strict criteria?
-### SBP? (SBP > 150)
-### DBP? (DBP > 100)
-### Sleep apnea Dx codes
-### Other? (According to Strict Criteria, could this population be separated? (regression methods/algorithms))
-
-# Intersection of different subcohorts *******
-## By RDB+/-, RAR+/-, DX+/-
-### Patient counts
-#### Encounter counts by patient
-
-# Correlation for RDB with
-## RACE/Age/Gender
-## RAR tests
-## BP's
-## Dx's (in different levels)
-
-
-
-# Multiple RAR tests  (tertiary questions...)
-## What is different between patients with and without multiple RAR Tests?
-### first time test values
-### locations
-## Time intervals between Tests
-## Result changes from tests
-### By time interval?
-### By initial potassium?
-### by initial aldo OR renin?
-### By entity??
-
-
-
-
-
-### Basics
-There are `r length(unique(pts$EMPI))` patients (by EMPI)(`r sum(pts$GENDER_MASTER_CODE == "F", na.rm = TRUE)` females, `r sum(pts$GENDER_MASTER_CODE == "M", na.rm = TRUE)` males). The following is race table:
-```{r ethnity}
-table(pts$RACE_MASTER_CODE)
-```
-
-
-A total `r nrow(rar_mg)` OUTPATIENT encounters from `r min(rar_mg$ENC_DATE)` to `r max(rar_mg$ENC_DATE)`. But 75% of the encounters occurred from `r quantile(rar_mg$ENC_DATE, 0.25)` to `r quantile(rar_mg$ENC_DATE, 0.75)`, or these are 1st and 3rd quantiles. The following is the encounter date range for RAR tests.  
-
-```{r rar_enc_date, cache.lazy=FALSE}
-tpp <- rar_mg %>% mutate(N = is.na(Aldo) + is.na(PRA) + is.na(DRC))
-tmp <- summary(tpp[which(tpp$N != 3), "ENC_DATE"])
-tmp
-```
-For all the encounters, the main entity are:
-```{r entity_table}
-table(rar_enc$MASTER_LOCATION_ENTITY)
-```
-```{r enc_by_entity_o, fig.width=20, fig.height=10}
-
-rar_enc %>% mutate(DATE = as.Date(cut(ENC_DATE, breaks="month"))) %>%
-  filter(year(ENC_DATE) >= 1995) %>%
-  group_by(DATE, MASTER_LOCATION_ENTITY) %>%
-  summarise(N_ENC = n()) %>% ungroup() %>%
-  ggplot(.) + geom_point(aes(x=DATE, y = N_ENC, group=MASTER_LOCATION_ENTITY, color=MASTER_LOCATION_ENTITY)) +
-  geom_line(aes(x=DATE, y = N_ENC, group=MASTER_LOCATION_ENTITY, color=MASTER_LOCATION_ENTITY)) + 
-  labs(x = "Date", y = "Total Encounters", title="Total Encounters by Month (From 1995) in Different Entities") + 
-  theme(plot.title = element_text(hjust = 0.5, size=20))
-
-
-```
-
-
-
-
-
-
-```{r rar_enc_paired}
-tmp2 <- rar_mg %>% mutate(rar_pair = !is.na(Aldo) & !(is.na(DRC) & is.na(PRA))) %>%
-  group_by(rar_pair) %>%
-  summarise(N=n())
-tmp2
-```
-Among these encounters, `r sum(tpp$N != 3)` encounters have at least one of Aldo/PRA/DRC tests performed, in a time period from `r tmp[1]` to `r tmp[6]`. Among these, `r tmp2[which(tmp2$rar_pair),"N"]` encounters have paired RAR tests: Aldo + PRA/DRC. In general, the ranges for RAR tests are:
-```{r rar_range}
-summary(rar_mg[,c("Aldo", "PRA","DRC")])
-```
-
-In patient level, `r sum(is.na(pts$Aldo)+is.na(pts$PRA)+is.na(pts$DRC) != 3)` patients [`r length(unique(pts$EMPI))` pts in total] have RAR tests, and `r sum(!is.na(pts$Aldo) & !(is.na(pts$PRA)&is.na(pts$DRC)))` patients have a paired RAR tests. The cohort was selected based on whether any RAR test was performed using `ORDER_ITEM_DESCRIPTION`, and what we find tests in R is by `RESULT_ITEM_CODE`, so this is why there are about 300 patients in the cohort who has no RAR test.   
-
-For RAR tests:
-```{r rar_enc}
-rar_empi <- pts[is.na(pts$Aldo) + is.na(pts$PRA) + is.na(pts$DRC) != 3, "EMPI"]
-temp <- rar_mg %>% filter(EMPI %in% rar_empi$EMPI) %>% mutate(rar = (is.na(Aldo) + is.na(PRA) + is.na(DRC) != 3)) %>%
-            group_by(EMPI) %>% summarise(N = sum(rar))
-summary(temp$N)
-```
-on average, per RAR patients has `r mean(temp$N)` encounters with RAR test. And most of RAR patients only have 1~3 RAR encounters.
-```{r rar_enc_plt, fig.width=20, fig.height=10}
-ggplot(temp) + geom_bar(aes(N), fill="blue",alpha=0.5) + labs(x = "# Encounters with RAR tests", y = "# Patients", title="Patients for RAR Encounters") +
-  theme(plot.title = element_text(hjust = 0.5, size=20))
-
-```
-
-Make a long-version of lab tests:
-```{r lab_long_mk, cache=TRUE}
-lab_long <- melt(lab_all, id.var = c("EMPI_DATE","EMPI", "ENC_DATE"), na.rm = TRUE)
-
-```
-
-This is the lab tests performed by time (on interval of month):
-```{r rar_tot_enc_count, fig.width=20, fig.height=10}
-lab_long %>% mutate(DATE = as.Date(cut(ENC_DATE, breaks="month"))) %>%
-  group_by(DATE) %>%
-  mutate(N_ENC = n()) %>% ungroup() %>%
-  filter(variable %in% c("Aldo", "PRA", "DRC")) %>%
-  group_by(DATE, variable) %>%
-  summarize(N = n(), N_ENC=max(N_ENC)) %>%
-  ggplot(.) + geom_point(aes(x=DATE, y = N, group=variable, color=variable)) + 
-  labs(x = "Date", y = "Number of Tests", title="Total Tests/RAR Tests Performed By Month") + 
-  geom_point(aes(x=DATE, y = N_ENC)) + theme(plot.title = element_text(hjust = 0.5, size=20))
-```
-```{r rar_enc_by_month, fig.width=20, fig.height=10}
-lab_long %>% mutate(DATE = as.Date(cut(ENC_DATE, breaks="month"))) %>%
-  group_by(DATE) %>%
-  mutate(N_ENC = n()) %>% ungroup() %>%
-  filter(variable %in% c("Aldo", "PRA", "DRC")) %>%
-  group_by(DATE, variable) %>%
-  summarize(N = n(), N_ENC=max(N_ENC)) %>%
-  ggplot(.) + geom_point(aes(x=DATE, y = N, group=variable, color=variable)) + 
-  geom_line(aes(x=DATE, y = N, group=variable, color=variable)) + 
-  labs(x = "Date", y = "Number of Tests", title="Number of RAR Tests Performed By Month") + 
-  theme(plot.title = element_text(hjust = 0.5, size=20))
-```
-
-
-```{r rar_enc_normalized_by_month, fig.width=20, fig.height=10, cache=TRUE}
-enc_month_ct <- rar_enc %>% mutate(DATE = as.Date(cut(ENC_DATE, breaks="month"))) %>%
-            group_by(DATE) %>%
-            summarize(month_ct = n()) %>% ungroup()
-
-
-lab_long %>% mutate(DATE = as.Date(cut(ENC_DATE, breaks="month"))) %>%
-  filter(variable %in% c("Aldo", "PRA", "DRC")) %>%
-  group_by(DATE, variable) %>%
-  summarize(N = n()) %>%
-  left_join(., enc_month_ct, by="DATE") %>%
-  ggplot(.) + geom_point(aes(x=DATE, y = N/month_ct, group=variable, color=variable)) + 
-  geom_line(aes(x=DATE, y = N/month_ct, group=variable, color=variable)) + 
-  geom_smooth(aes(x=DATE, y = N/month_ct, group=variable, color=variable), method="loess") + 
-  labs(x = "Date", y = "Normalized Number of RAR Tests", title="Number of RAR Tests Performed Per Encounter By Month") + 
-  theme(plot.title = element_text(hjust = 0.5, size=20))
-```
-
-
-
-```{r, fig.width=20, fig.height=10}
-lab_long %>% filter(variable %in% c("Aldo", "PRA", "DRC")) %>%
-  ggplot(.) + geom_point(aes(x=ENC_DATE, y = value, group = variable, color = variable), alpha=0.5) + 
-  geom_smooth(aes(x=ENC_DATE, y = value, group = variable, color = variable), method="lm") + 
-  scale_y_log10() + 
-  labs(x = "Date", y = "log_10(Test Values)", title="RAR Tests Result Values (log_10) along Time") + 
-  theme(plot.title = element_text(hjust = 0.5, size=20))
-```
-
-
-For other labs, there are `r sum(grepl("^Test", names(rar_mg)))` labs included, mainly covering CBC, CBD, BMP. In general, the summary for lab tests performed by encounter:  
-```{r lab_per_enc}
-lab_name <- names(rar_mg)[which(grepl("^Test", names(rar_mg)))]
-temp <- rar_mg %>% select(lab_name)
-tmp <- apply(temp, 1, function(x) sum(!is.na(x)))
-
-summary(tmp)
-```
-there are `r mean(tmp)` lab tests performed on average per encounter, but the 1st and 3rd quantile indicate that most encounters do not have these `r sum(grepl("^Test", names(rar_mg)))` lab tests performed. In general, the total number for different lab tests ordered per month is shown:
-
-```{r lab_ct_by_time, fig.width=20, fig.height=10}
-lab_long %>% mutate(DATE = as.Date(cut(ENC_DATE, breaks="month"))) %>%
-  group_by(DATE) %>%
-  mutate(N_ENC = n()) %>% ungroup() %>%
-  filter(!(variable %in% c("Aldo", "PRA", "DRC"))) %>%
-  group_by(DATE, variable) %>%
-  summarize(N = n(), N_ENC=max(N_ENC)) %>%
-  ggplot(.) + geom_line(aes(x=DATE, y = N, group=variable, color=variable))+ 
-  labs(x = "Date", y = "Number of Tests Performed", title="Tests Performed by Month") + 
-  theme(plot.title = element_text(hjust = 0.5, size=20), legend.position="none")
-```
-
-
-```{r lab_ct_normalized_by_time, fig.width=20, fig.height=10}
-lab_long %>% mutate(DATE = as.Date(cut(ENC_DATE, breaks="month"))) %>%
-  filter(!(variable %in% c("Aldo", "PRA", "DRC"))) %>%
-  group_by(DATE, variable) %>%
-  summarize(N = n()) %>%
-  left_join(., enc_month_ct, by="DATE") %>%
-  ggplot(.) + geom_line(aes(x=DATE, y = N/month_ct, group=variable, color=variable))+ 
-  labs(x = "Date", y = "Normalized Number of Tests Performed", title="Tests Performed Per Encounter by Month") + 
-  theme(plot.title = element_text(hjust = 0.5, size=20), legend.position="none")
-```
-
-```{r lab_tot_ct_normalized_by_time, fig.width=20, fig.height=10}
-lab_long %>% mutate(DATE = as.Date(cut(ENC_DATE, breaks="month"))) %>%
-  group_by(DATE) %>%
-  summarize(N = n()) %>%
-  left_join(., enc_month_ct, by="DATE") %>%
-  ggplot(.) + geom_line(aes(x=DATE, y = N/month_ct)) + 
-  geom_smooth(aes(x=DATE, y = N/month_ct), method = "loess") + 
-  labs(x = "Date", y = "Normalized Number of Tests Performed", title="All Tests Performed Per Encounter by Month") + 
-  theme(plot.title = element_text(hjust = 0.5, size=20), legend.position="none")
-```
-
-This is a summary for each lab test result:
-```{r lab_sum}
-summary(rar_mg[, grepl("^Test", names(rar_mg))])
-```
-
-For blood pressure, there are `r sum(!is.na(rar_mg$BP_SYSTOLIC) | !is.na(rar_mg$BP_DIASTOLIC))` encounters that have at least SBP or DBP recorded. And there are `r sum(!is.na(rar_mg$BP_SYSTOLIC) & !is.na(rar_mg$BP_DIASTOLIC))` encounters with both SBP and DBP, and these cover `r nrow(unique(rar_mg[!is.na(rar_mg$BP_SYSTOLIC) & !is.na(rar_mg$BP_DIASTOLIC), "EMPI"]))` patients. The range for SBP and DBP:
-```{r bp_range}
-summary(rar_mg[,c("BP_SYSTOLIC", "BP_DIASTOLIC")])
-```
-
-There are `r sum((!is.na(rar_mg$BP_SYSTOLIC) | !is.na(rar_mg$BP_DIASTOLIC)) & (!is.na(rar_mg$Aldo) & !(is.na(rar_mg$PRA)&is.na(rar_mg$DRC))))` encounters have BP(SBP/DBP) and paired RAR tests(Aldo + PRA/DRC), and this covers `r nrow(unique(rar_mg[((!is.na(rar_mg$BP_SYSTOLIC) | !is.na(rar_mg$BP_DIASTOLIC)) & (!is.na(rar_mg$Aldo) & !(is.na(rar_mg$PRA)&is.na(rar_mg$DRC)))), "EMPI"]))` patients.
-
-
-
-
-```{r bp_cts, fig.width=20, fig.height=10}
-
-rar_enc %>% select(ENC_DATE, BP_SYSTOLIC, BP_DIASTOLIC) %>%
-  filter(!is.na(BP_SYSTOLIC) | !is.na(BP_DIASTOLIC)) %>%
-  melt(., id.var="ENC_DATE") %>% 
-  mutate(DATE = as.Date(cut(ENC_DATE, breaks='month'))) %>%
-  group_by(DATE) %>%
-  summarise(N=n()) %>%
-  ggplot(.) + geom_point(aes(x = DATE, y = N)) + 
-  geom_line(aes(x = DATE, y = N)) + 
-  geom_smooth(aes(x = DATE, y = N), method="loess") + 
-  labs(x = "Date", y = "Number of BP's Tested", title="Number of SBP/DBP Tests along Time (by month)") +
-  theme(plot.title = element_text(hjust = 0.5, size=20))
-
-```
-
-```{r bp_cts_normalized, fig.width=20, fig.height=10}
-
-rar_enc %>% select(ENC_DATE, BP_SYSTOLIC, BP_DIASTOLIC) %>%
-  mutate(DATE = as.Date(cut(ENC_DATE, breaks='month'))) %>%
-  group_by(DATE) %>%
-  mutate(enc_N = n()) %>%
-  ungroup() %>%
-  filter(!is.na(BP_SYSTOLIC) | !is.na(BP_DIASTOLIC)) %>%
-  group_by(DATE) %>%
-  summarise(N=n(), tot_N = median(enc_N)) %>%
-  ggplot(.) + geom_point(aes(x = DATE, y = N/tot_N)) + 
-  geom_line(aes(x = DATE, y = N/tot_N)) + 
-  geom_smooth(aes(x = DATE, y = N/tot_N), method = "loess") + 
-  labs(x = "Date", y = "Normalized Number of BP's Tested", title="Number of SBP/DBP Tests Per Encounter along Time (by month)") +
-  theme(plot.title = element_text(hjust = 0.5, size=20))
-
-
-```
-
-
-
-```{r bp_dis, fig.width=20, fig.height=10}
-
-
-
-rar_enc %>% select(ENC_DATE, BP_SYSTOLIC, BP_DIASTOLIC) %>%
-  filter(!is.na(BP_SYSTOLIC) | !is.na(BP_DIASTOLIC)) %>%
-  melt(., id.var="ENC_DATE") %>% 
-  mutate(DATE = as.Date(cut(ENC_DATE, breaks='month'))) %>%
-  ggplot(.) + 
-  geom_boxplot(aes(x=factor(DATE), y=value)) + 
-  labs(x = "Date", y = "Blood Pressure Value", title="SBP/DBP Values along Time") +
-  theme(plot.title = element_text(hjust = 0.5, size=20)) + 
-  facet_wrap(~ variable)
-
-
-
-```
-Also this figure points out the time frame for BP's starts in around 2010. For those RAR patients with BP's:
-```{r rar_pt_bp}
-temp <- unique(rar_mg[((!is.na(rar_mg$BP_SYSTOLIC) | !is.na(rar_mg$BP_DIASTOLIC)) & (!is.na(rar_mg$Aldo) & !(is.na(rar_mg$PRA)&is.na(rar_mg$DRC)))), "EMPI"])
-summary(rar_mg %>% select(EMPI, ENC_DATE, BP_SYSTOLIC, BP_DIASTOLIC) %>%
-  filter(EMPI %in% temp$EMPI))
-  
-```
-One thing to notice is that the ranges for both SBP and DBP are higher than those for the entire cohort, which could also be illustrated this way:
-```{r bp_RAR_vs_entire, fig.width=20, fig.height=10}
-rar_enc %>% mutate(Group = ifelse(EMPI %in% temp$EMPI, "paired-RAR", "non-paired-RAR")) %>%
-  select(Group, BP_SYSTOLIC, BP_DIASTOLIC) %>%
-  filter(!is.na(BP_SYSTOLIC) | !is.na(BP_DIASTOLIC)) %>%
-  melt(id.var="Group") %>%
-  mutate(Group = factor(.$Group, levels=c("paired-RAR", "non-paired-RAR"))) %>%
-  ggplot(.) + geom_boxplot(aes(x = Group, y = value)) + facet_wrap(~variable) + 
-  labs(title="Blood Pressure in Paired RAR Group vs non-Paired RAR Group") + 
-  theme(plot.title = element_text(hjust=0.5, size=20))
-```
-```{r wilcox}
-tmp <- rar_enc %>% mutate(Group = ifelse(EMPI %in% temp$EMPI, "paired-RAR", "non-paired-RAR")) %>%
-  select(Group, BP_SYSTOLIC, BP_DIASTOLIC) %>%
-  filter(!is.na(BP_SYSTOLIC) | !is.na(BP_DIASTOLIC)) %>%
-  melt(id.var="Group") %>%
-  mutate(Group = factor(.$Group, levels=c("paired-RAR", "non-paired-RAR")))
-# SBP
-wilcox.test(tmp[which(tmp$Group == "paired-RAR" & tmp$variable == "BP_SYSTOLIC"), "value"], 
-            tmp[which(tmp$Group == "non-paired-RAR" & tmp$variable == "BP_SYSTOLIC"), "value"])
-
-# DBP
-wilcox.test(tmp[which(tmp$Group == "paired-RAR" & tmp$variable == "BP_DIASTOLIC"), "value"], 
-            tmp[which(tmp$Group == "non-paired-RAR" & tmp$variable == "BP_DIASTOLIC"), "value"])
-
-```
-Thus according to wilcoxon test, there are significant differences in both SBP and DBP for patient with/without paired RAR tests.
-
-
-
-There are in total `r sum(grepl("^CODE", names(rar_mg)))` different Dx's from both ICD-9 and ICD-10, `r sum(grepl("^CODE_[0-9]", names(rar_mg)))` from ICD-9 and `r sum(grepl("^CODE_[A-Z]", names(rar_mg)))`. These Dx's includes 4 categories: Hyperaldosteronism, Hypertension, Diabetes, and Sleep Apnea.
-
-Create a long version for Dx_h1
-```{r dx_h1_ct, fig.width=20, fig.height=10, cache=TRUE}
-dx_h1_long <- dx_all %>% 
-        mutate(ENC_DATE = as.Date(substr(EMPI_DATE, 12, 21), format="%Y-%m-%d")) %>%
-        mutate(EMPI = substr(EMPI_DATE, 1, 10)) %>%
-        select(EMPI, ENC_DATE, Dx_h1_Diabetes:Dx_h1_Secondary_HTN) %>% melt(., id.var=c("EMPI", "ENC_DATE"))
-
-
-dx_h1_long %>% 
-  na.omit(.) %>%
-  mutate(DATE = as.Date(cut(ENC_DATE, breaks='month'))) %>%
-  group_by(DATE, variable) %>%
-  summarize(N=sum(value != 0)) %>%
-  ggplot(.) + geom_point(aes(x = DATE, y = N, group=variable, colour=variable)) + 
-  geom_smooth(aes(x = DATE, y = N, group=variable, colour=variable), method="loess") + 
-  labs(x = "Date", y = "Number of Dx's", title="Number of Dx's along Time (by month)") +
-  theme(plot.title = element_text(hjust = 0.5, size=20))
-```
-
-Create a long version for Dx_h1
-```{r dx_h1_normalized_ct, fig.width=20, fig.height=10}
-
-dx_h1_long %>% 
-  na.omit(.) %>%
-  mutate(DATE = as.Date(cut(ENC_DATE, breaks='month'))) %>%
-  group_by(DATE, variable) %>%
-  summarize(N=sum(value != 0)) %>%
-  left_join(., enc_month_ct, by="DATE") %>%
-  ggplot(.) + geom_point(aes(x = DATE, y = N/month_ct, group=variable, colour=variable)) + 
-  geom_smooth(aes(x = DATE, y = N/month_ct, group=variable, colour=variable), method="loess") + 
-  labs(x = "Date", y = "Number of Dx's/Enc", title="Number of Dx's Per Encounter along Time (by month)") +
-  theme(plot.title = element_text(hjust = 0.5, size=20))
-```
-
-
-
-### RAR Tests on Strict Criteria
-For diagnosis, Aldo > 15ng/dL and Aldo/PRA >= 30 is the criteria.
-### Patients
-There are `r length(unique(pts$EMPI))` patients (by EMPI). And the summary of total encounters.
-```{r pts_enc}
-summary(pts$enc_n)
-```
-The total encounters varies a lot from `r min(pts$enc_n)` to `r max(pts$enc_n)`.
-
-```{r enc_per_year, fig.width=20, fig.height=10}
-temp <- rar_mg %>% mutate(enc_year = format(ENC_DATE, "%Y")) %>%
-  group_by(EMPI, enc_year) %>%
-  summarise(N = n()) %>% ungroup() %>%
-  group_by(EMPI) %>%
-  mutate(tot_N = sum(N)) %>% ungroup()
-
-
-ggplot(temp, aes(x=enc_year, y=N, group=EMPI)) + geom_point(aes(alpha = tot_N)) + labs(x = "Encounter Year", y = "Total Encounters per Year", title = "Encounters Per Year Per Patient") + theme(plot.title = element_text(hjust = 0.5))
-
-```
-
-Another way is to find total encounters vs length of encounters:
-```{r enc_vs_length, fig.width=20, fig.height=10}
-temp2 <- rar_mg %>% mutate(enc_year = as.numeric(format(ENC_DATE, "%Y"))) %>%
-  group_by(EMPI, enc_year) %>%
-  summarise(N = n()) %>% ungroup() %>%
-  group_by(EMPI) %>%
-  mutate(tot_N = sum(N), ENC_period = max(enc_year)-min(enc_year)) %>% 
-  slice(1) %>%
-  ungroup()
-
-ggplot(temp2, aes(x = ENC_period, y = N)) + geom_point() + labs(x="Enc History (Years)", y="Total Encounters", title="Total Encounters Per Patient vs Encounter History") + theme(plot.title = element_text(hjust = 0.5))
-
-```
-This figure shows that a very long Encounter history does not necessarily means a high total encounters.
-
-
-### ENCOUNTER Level
-All info here came from EPIC:
-```{r source_code}
-table(rar_mg$SOURCE_CODE)
-```
-Encounters with no Dx's:
-```{r no_dx}
-n_dx <- sum(grepl("^CODE|^Dx", names(rar_mg)))
-
-
-temp <- apply(rar_mg[,4:(4+n_dx - 1)], 1, sum)
-table(temp)
-```
-So it turns out that there are lots of ENC's which do not have any Dx's.  
-As for PA Dx's
-```{r no_pa_dx}
-rar_mg %>% select(Dx_h1_Primary_aldosteronism) %>% 
-  group_by(Dx_h1_Primary_aldosteronism) %>%
-  summarise(N=n())
-
-
-```
-This shows that only about 4400 ENC's that have PA Dx's.   
-For RAR(Aldo/PRC/DRA) tests, only 79 of ENC's have aldo/renin tests paired...
-```{r rar_lab}
-rar_mg %>% mutate(rar_missing = is.na(Aldo)+(is.na(DRC)|is.na(PRA))) %>%
-  group_by(rar_missing) %>%
-  summarise(N=n()) %>%
-  print.data.frame()
-```
-```{r rar_lab_summary}
-summary(rar_mg[,c("Aldo","DRC","PRA")])
-```
-
-```{r}
-ggplot(rar_mg, aes(rar_mg$PA_AVS_tot_0115,rar_mg$Aldo)) + geom_boxplot()
-```
-
 
