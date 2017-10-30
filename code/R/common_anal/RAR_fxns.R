@@ -412,9 +412,15 @@ load_RAR_enc <- function(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_ENC.csv"
                   SERVICE_MASTER_DESCRIPTION = 'character', 
                   BP_SYSTOLIC = 'numeric', BP_DIASTOLIC = 'numeric')
   
-  
-  
+
   rar_enc <- fread_epic(dat_file = dat_file, colClasses = colClasses, logger = logger)
+  
+  
+  
+  
+  # initial EMPI's
+  msg <- sprintf("load_RAR_enc: Read in raw encounter data. %d unique EMPI's, in %d total rows.", length(unique(rar_enc$EMPI)), nrow(rar_enc))
+  if(!is.null(logger)) logger$info(msg)
   
   # left censor data
   if(!is.null(left_censor_date)){
@@ -432,7 +438,9 @@ load_RAR_enc <- function(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_ENC.csv"
     
     rar_enc %<>% 
       filter(PATIENT_MASTER_CLASS == "OUTPATIENT")
-    if(!is.null(logger)) logger$info("Only OUTPATIENT is selected from ENC data.")
+    
+    msg <- sprintf("load_RAR_enc: Only OUTPATIENT is selected from ENC data. %d unique EMPI's, in %d total rows.", length(unique(rar_enc$EMPI)), nrow(rar_enc))
+    if(!is.null(logger)) logger$info(msg)
   }
   
 
@@ -441,6 +449,9 @@ load_RAR_enc <- function(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_ENC.csv"
     rar_enc %<>% 
       select(EMPI, PK_ENCOUNTER_ID, ENC_DATE, E_SOURCE_LAST_UPDATE, 
              BP_SYSTOLIC, BP_DIASTOLIC)
+      
+      msg <- sprintf("load_RAR_enc: ONLY BP info is selected from enc data.")
+      if(!is.null(logger)) logger$info(msg)
   }
 
   
@@ -457,6 +468,8 @@ load_RAR_enc <- function(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_ENC.csv"
   rar_enc$EMPI_DATE <- paste(rar_enc$EMPI, 
                              format(rar_enc$ENC_DATE, "%Y-%m-%d"))
 
+  msg <- sprintf("load_RAR_enc: Before collapsing, %d unique EMPI_DATE, in %d total rows.", length(unique(rar_enc$EMPI_DATE)), nrow(rar_enc))
+  if(!is.null(logger)) logger$info(msg)
   
   
   if(EMPI_DATE_Level){
@@ -487,12 +500,21 @@ load_RAR_enc <- function(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_ENC.csv"
     # merge r1 back to r0
     rar_enc <- r0 %>% bind_rows(., r1) %>% ungroup()
     
+    
+    msg <- sprintf("load_RAR_enc: After collapsing into EMPI_DATE level, %d unique EMPI_DATE, in %d total rows.", 
+                   length(unique(rar_enc$EMPI_DATE)), nrow(rar_enc))
+    if(!is.null(logger)) logger$info(msg)
+    
     return(rar_enc)
     
   }
 
   
   # TODO: If HAR_Level = FALSE, need to collapse into PK_ENCOUNTER_ID level
+  
+  msg <- sprintf("load_RAR_enc: Returned clean-up enc data. %d unique EMPI's, %d unique EMPI_DATE, in %d total rows.", 
+                 length(unique(rar_enc$EMPI)),length(unique(rar_enc$EMPI_DATE)), nrow(rar_enc))
+  if(!is.null(logger)) logger$info(msg)
   
   return(rar_enc)
   
@@ -515,9 +537,11 @@ load_RAR_Dx <- function(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_DX.csv", 
                   DX_SEQUENCE = 'numeric')
   
   
-  
   rar_dx <- fread_epic(dat_file = dat_file, colClasses = colClasses, logger = logger)
   
+  msg <- sprintf("load_RAR_Dx: Read in raw Dx data. %d unique EMPI, %d unique Dx codes, in %d total rows.", 
+                 length(unique(rar_dx$EMPI)), length(unique(rar_dx$CODE)),nrow(rar_dx))
+  if(!is.null(logger)) logger$info(msg)
   
   # remove those without ICD indicator (Since they also do not have CODE)
   rar_dx %<>% filter(CODE_STANDARD_NAME != "")
@@ -525,6 +549,11 @@ load_RAR_Dx <- function(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_DX.csv", 
   
   # change PRIMARY_YN into factor
   rar_dx$PRIMARY_YN <- ifelse(rar_dx$PRIMARY_YN == "1", TRUE, FALSE)
+  
+  
+  msg <- sprintf("load_RAR_Dx: After remove missing Dx from raw dx . %d unique EMPI, %d unique Dx codes, in %d total rows.", 
+                 length(unique(rar_dx$EMPI)), length(unique(rar_dx$CODE)),nrow(rar_dx))
+  if(!is.null(logger)) logger$info(msg)
   
   return(rar_dx)
   
@@ -542,14 +571,15 @@ sub_RAR_dx <- function(dat, CODE_Level, hierarchy_dx,
   #' @param outpatient_only logit If TRUE, only include Outpatients. Default is TRUE.
   #' @param left_censor_date POSIXct Left-censoring date
   #' @return ret tibble A table for Dx's in ICD, Dx_h0, Dx_h1, Dx_h2 levels, and Dx counts for all EMPI_DATE (outpatient by default)
-  
+
   ret <- tibble()  # return tibble
   spec_dx <- c() # specific dx's captured
   
   # left censor data
   if(!is.null(left_censor_date)){
     dat %<>% filter(ENC_DATE >= left_censor_date)
-    msg <- sprintf("sub_RAR_dx: Encounter data were left censored at %s", left_censor_date)
+    msg <- sprintf("sub_RAR_dx: Dx data were left censored at %s. %d unique EMPI, %d unique Dx codes, in %d total rows.", 
+                   left_censor_date, length(unique(dat$EMPI)), length(unique(dat$CODE)),nrow(dat))
     if(!is.null(logger)) logger$info(msg)
   }
   
@@ -561,7 +591,9 @@ sub_RAR_dx <- function(dat, CODE_Level, hierarchy_dx,
     dat %<>% 
       filter(PATIENT_MASTER_CLASS == "OUTPATIENT")
     
-    if(!is.null(logger)) logger$info("RAR_dx: only Dx with PATIENT_MASTER_CLASS = OUTPATIENT are selected")
+    msg <- sprintf("sub_RAR_dx: ONLY Dx with PATIENT_MASTER_CLASS = OUTPATIENT are selected. %d unique EMPI, %d unique Dx codes, in %d total rows.",
+                   length(unique(dat$EMPI)), length(unique(dat$CODE)),nrow(dat))
+    if(!is.null(logger)) logger$info(msg)
   }
   
   
@@ -573,6 +605,9 @@ sub_RAR_dx <- function(dat, CODE_Level, hierarchy_dx,
   
   
   ret <- dat %>% filter(CODE %in% icd_map$CODE)
+  msg <- sprintf("sub_RAR_dx: ONLY %s level Dx code(s) [%s] were selected!  %d unique EMPI, %d unique ICD codes (with those CODE's), in %d total rows.", 
+                 CODE_Level, paste(hierarchy_dx, collapse = ", "),  length(unique(ret$EMPI)), length(unique(ret$CODE)),nrow(ret))
+  if(!is.null(logger)) logger$info(msg)
   
   # # Create new ENC ID: EMPI_DATE
   # # TODO: pull this out into function
@@ -647,7 +682,7 @@ sub_RAR_dx <- function(dat, CODE_Level, hierarchy_dx,
     n_h1 <- length(unique(ret_h1$EMPI_DATE))
     n_h2 <- length(unique(ret_h2$EMPI_DATE))
     if(!(n0 == n_icd & n0 == n_icd & n0 == n_h0 & n0 == n_h1 & n0 == n_h2)){
-      logger$warn("sub_RAR_dx: some EMPI_DATE got dropped in converting Dx to higher levels")
+      if(!is.null(logger)) logger$warn("sub_RAR_dx: some EMPI_DATE got dropped in converting Dx to higher levels")
     }
     
     
@@ -663,11 +698,11 @@ sub_RAR_dx <- function(dat, CODE_Level, hierarchy_dx,
   
   
   if(empi_date_0 != empi_date_1){
-    err_msg <- sprintf("sub_RAR_dx: missing EMPI_DATEs (Should be %d; Actually: %d)", empi_date_0, empi_date_1)
+    err_msg <- sprintf("sub_RAR_dx: missing EMPI_DATEs after collapsing into EMPI_DATE level (Should be %d; Actually: %d)", empi_date_0, empi_date_1)
     if(!is.null(logger)) logger$warn(err_msg)
     warning(err_msg)
   }else{
-    msg <- sprintf("sub_RAR_dx: all EMPI_DATEs are present (Number: %d)", empi_date_1)
+    msg <- sprintf("sub_RAR_dx: all EMPI_DATEs are present (Number: %d) after collapsing to EMPI_DATE level", empi_date_1)
     if(!is.null(logger)) logger$warn(msg)
   }
   
@@ -677,6 +712,20 @@ sub_RAR_dx <- function(dat, CODE_Level, hierarchy_dx,
   ret[is.na(ret)] <- 0
   
   # TODO: If HAR_Level = FALSE, need to collapse into PK_ENCOUNTER_ID level
+  dx_icd_cat <- names(ret)[grepl("^CODE",names(ret))]
+  dx_h0_cat <- names(ret)[grepl("^Dx_h0", names(ret))]
+  dx_h1_cat <- names(ret)[grepl("^Dx_h1", names(ret))]
+  dx_h2_cat <- names(ret)[grepl("^Dx_h2", names(ret))]
+  empi <- substr(ret$EMPI_DATE, 1, 10)
+  msg <- sprintf("sub_RAR_dx: Returned Dx data: %d unique EMPI, all %d unique EMPI_DATE (including all EMPI_DATE with/without selected ICD CODE's), %d unique EMPI_DATE (with selected ICD CODE's), %d unique ICD codes, %d Dx H0 Codes (%s), %d unique Dx H1 Codes (%s), %d unique Dx H2 Codes, in %d total rows.", 
+                 length(unique(empi)), length(unique(ret$EMPI_DATE)), empi_date_1, 
+                 length(unique(dx_icd_cat)), 
+                 length(unique(dx_h0_cat)), paste(unique(dx_h0_cat), collapse = ", "),
+                 length(unique(dx_h1_cat)), paste(unique(dx_h1_cat), collapse = ", "),
+                 length(unique(dx_h2_cat)),
+                 nrow(ret))
+  if(!is.null(logger)) logger$info(msg)
+  
   return(ret)
   
 }
@@ -695,11 +744,13 @@ load_RAR_PtDemo <- function(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_DEMO.
                   EMPI = 'character', PK_PATIENT_ID = 'character', GENDER_MASTER_CODE = 'character', 
                   RACE_MASTER_CODE = 'character', RACE_MASTER_HISPANIC_YN = 'character')
   
-  
   rar_demo <- fread_epic(dat_file = dat_file, colClasses = colClasses, logger = logger)
   
   
-
+  
+  
+  msg <- sprintf("load_RAR_PtDemo: Read in Patient Demo data. %d unique EMPI's, %d total rows", length(unique(rar_demo$EMPI)), nrow(rar_demo))
+  if(!is.null(logger)) logger$info(msg)
   # For EMPI's with more than 1 PK_ENCOUNTER_ID
   # This method will first deal with NA in Gender, then RACE (UNKNOWN)
   # TODO: get timetamps on the patient table (so can pick based on that PK_PATIENT_ID dates)
@@ -713,6 +764,8 @@ load_RAR_PtDemo <- function(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_DEMO.
   # All other will be NA, like UNKNOWN
   rar_demo$RACE_MASTER_CODE <- factor(rar_demo$RACE_MASTER_CODE, levels = c("BLACK", "WHITE","OTHER","AM IND AK NATIVE", "ASIAN", "HI PAC ISLAND", "MIXED"))
   
+  msg <- sprintf("load_RAR_PtDemo: Cleaned Patient Demo data. %d unique EMPI's", length(unique(rar_demo$EMPI)))
+  if(!is.null(logger)) logger$info(msg)
   
   return(rar_demo)
   
@@ -775,6 +828,10 @@ load_Lab <- function(dat_file,  lab_source, adjust_up = 1.5, adjust_down = 0.5,
   
   rar_lab <- fread_epic(dat_file = dat_file, colClasses = colClasses, logger = logger)
 
+  
+  msg <- sprintf("load_Lab: Read raw Lab data. %d EMPI's, in %d total rows.", length(unique(rar_lab$EMPI)), nrow(rar_lab))
+  if(!is.null(logger)) logger$info(msg)
+  
   # modify RESULT_VALUE, using numericize function
   rar_lab$RESULT_VALUE <- numericize(rar_lab$RESULT_VALUE, adjust_up = adjust_up, adjust_down = adjust_down)
   
@@ -782,12 +839,16 @@ load_Lab <- function(dat_file,  lab_source, adjust_up = 1.5, adjust_down = 0.5,
   # left censor data
   if(!is.null(left_censor_date)){
     rar_lab %<>% filter(ENC_DATE >= left_censor_date)
-    msg <- sprintf("load_Lab: Encounter data were left censored at %s", left_censor_date)
+    msg <- sprintf("load_Lab: Encounter data were left censored at %s. %d EMPI's, in %d total rows.", 
+                   left_censor_date, length(unique(rar_lab$EMPI)), nrow(rar_lab))
     if(!is.null(logger)) logger$info(msg)
   }
   
   
   
+  msg <- sprintf("load_Lab: Return ALL Lab data. %d EMPI's, in %d total rows.", 
+                 length(unique(rar_lab$EMPI)), nrow(rar_lab))
+  if(!is.null(logger)) logger$info(msg)
   
   return(rar_lab)
   
@@ -809,16 +870,25 @@ clean_Lab <- function(dat, RAR_only = TRUE, potassium_in = TRUE, num_labs = 0, l
  
   dat %<>% filter(!is.na(dat$PK_ORDER_RESULT_ID))
   
+  msg <- sprintf("clean_Lab: Records with missing PK_ORDER_RESULT_ID were removed. %d EMPI's, %d total rows.", 
+                 length(unique(dat$EMPI)), nrow(dat))
+  if(!is.null(logger)) logger$info(msg)
   
   # Duplicates
   if(sum(duplicated(dat))){
-    if(!is.null(logger)) logger$warn("TODO: Duplicated rows in pre_rar input: need to explain")
+    if(!is.null(logger)) logger$warn("clean_Lab: Duplicated rows in Lab's are present")
     dat %<>%
       filter(!duplicated(dat))
   }
   
   # Create new ENC ID: EMPI_DATE
   dat$EMPI_DATE <- paste(dat$EMPI, format(dat$ENC_DATE, "%Y-%m-%d"))
+  
+  msg <- sprintf("clean_Lab: All Labs: %d EMPI's, %d EMPI_Date's, %d total rows.", 
+                 length(unique(dat$EMPI)), length(unique(dat$EMPI_DATE)), nrow(dat))
+  if(!is.null(logger)) logger$info(msg)
+  
+  
   
   # Create ret table
   ret <- as.tibble()
@@ -850,6 +920,11 @@ clean_Lab <- function(dat, RAR_only = TRUE, potassium_in = TRUE, num_labs = 0, l
     bind_rows(., ret) %>% ungroup()
   
 
+  msg <- sprintf("clean_Lab: RAR Labs: %d EMPI's, %d EMPI_Date's, %d total rows.", 
+                 length(unique(ret$EMPI)), length(unique(ret$EMPI_DATE)), nrow(ret))
+  if(!is.null(logger)) logger$info(msg)
+  
+  
   
   
   if(RAR_only){
@@ -857,6 +932,12 @@ clean_Lab <- function(dat, RAR_only = TRUE, potassium_in = TRUE, num_labs = 0, l
     ret <- collapse_lab_PK_ORDER_ID_RIC(ret)
     
     ret %<>% ungroup()
+    
+    
+    msg <- sprintf("clean_Lab: ONLY RAR Labs are returnd as Lab data: %d EMPI's, %d EMPI_Date's, %d total rows.", 
+                   length(unique(ret$EMPI)), length(unique(ret$EMPI_DATE)), nrow(ret))
+    if(!is.null(logger)) logger$info(msg)
+    
     
     return(ret)
   }
@@ -868,6 +949,12 @@ clean_Lab <- function(dat, RAR_only = TRUE, potassium_in = TRUE, num_labs = 0, l
     ret <- dat  %>% filter(RESULT_ITEM_CODE == "POTASSIUM") %>% 
       mutate(Test = "POTASSIUM") %>%
       bind_rows(., ret)
+    
+    msg <- sprintf("clean_Lab: Potassium Labs included: %d unique tests, %d EMPI's, %d EMPI_Date's, %d total rows.", 
+                   length(unique(ret$Test)),length(unique(ret$EMPI)), length(unique(ret$EMPI_DATE)), nrow(ret))
+    if(!is.null(logger)) logger$info(msg)
+    
+    
   }
   
   
@@ -886,12 +973,23 @@ clean_Lab <- function(dat, RAR_only = TRUE, potassium_in = TRUE, num_labs = 0, l
       mutate(Test = RESULT_ITEM_CODE) %>%
       bind_rows(., ret)
     
+    
+    msg <- sprintf("clean_Lab: %s Labs included: %d unique tests, %d EMPI's, %d EMPI_Date's, %d total rows.", 
+                   num_labs, length(unique(ret$Test)),length(unique(ret$EMPI)), length(unique(ret$EMPI_DATE)), nrow(ret))
+    if(!is.null(logger)) logger$info(msg)
+    
+    
   }
   
   
   ret %<>% ungroup()
   
   ret <- collapse_lab_PK_ORDER_ID_RIC(ret)
+  
+  msg <- sprintf("clean_Lab: Returned Lab data in PK_ORDER_ID+RESULT_ITEM_CODE level: %d unique tests, %d EMPI's, %d EMPI_Date's, %d total rows.", 
+                 length(unique(ret$Test)),length(unique(ret$EMPI)), length(unique(ret$EMPI_DATE)), nrow(ret))
+  if(!is.null(logger)) logger$info(msg)
+  
   
 
   return(ret)
@@ -939,11 +1037,19 @@ collapse_lab_PK_ORDER_ID_RIC <- function(dat){
 }
 
 
-collapse_lab_EMPI_DATE <- function(dat){
+collapse_lab_EMPI_DATE <- function(dat, logger=NULL){
   #' This function is applied to cleaned lab data set(on PK_ORDER_ID + RESULT_ITEM_CODE level, 
   #' Picked by Corrected > Final ...) into EMPI_DATE level
   #' @param dat tibble Cleaned lab data set
   #' @return ret tibble Returned data set on EMPI_DATE level
+  
+  
+  
+  n_labs <- sum(grepl("^Test", names(dat))) + sum(names(dat) %in% c("Aldo", "PRA", "DRC"))
+  msg <- sprintf("collapse_lab_EMPI_DATE: Before collapsing to EMPI_DATE level of Labs: %d EMPI's, %d EMPI_DATE's, in %d total rows",
+                 length(unique(dat$EMPI)), length(unique(dat$EMPI_DATE)), n_labs, nrow(dat))
+  if(!is.null(logger)) logger$info(msg)
+  
   
   # For RAR use collapse_RAR_Lab function
   rar_lab <- subset(dat, Test %in% c("PRA", "DRC", "Aldo"))
@@ -1011,6 +1117,12 @@ collapse_lab_EMPI_DATE <- function(dat){
  
   # replace space in names with "_"
   names(ret) <- gsub(" ", "_", names(ret))
+  
+  
+  n_labs <- sum(grepl("^Test", names(ret))) + sum(names(ret) %in% c("Aldo", "PRA", "DRC"))
+  msg <- sprintf("collapse_lab_EMPI_DATE: Returned EMPI_DATE level Lab data: %d EMPI's, %d EMPI_DATE's, %d unique labs, in %d total rows",
+                 length(unique(ret$EMPI)), length(unique(ret$EMPI_DATE)), n_labs, nrow(ret))
+  if(!is.null(logger)) logger$info(msg)
   
   return(ret)
 }
@@ -1180,7 +1292,7 @@ rar_merge <- function(rar_dx, rar_enc, rar_lab, rar_demo, id, pt_id = "EMPI",
   #' Default is TRUE, and every other data sets were merged to Encounter data set.
   #' @return rar_mg tibble The merged data set
   
-
+  
   ## drop some columns
   rar_enc %<>% 
     select(-one_of(c("E_SOURCE_LAST_UPDATE", "PK_ENCOUNTER_ID", "ENC_DATE", 'HAR_NUMBER')))
@@ -1191,14 +1303,13 @@ rar_merge <- function(rar_dx, rar_enc, rar_lab, rar_demo, id, pt_id = "EMPI",
     select(-one_of(c('EMPI', 'PK_ENCOUNTER_ID', 'ENC_DATE')))
   rar_demo %<>% select(-one_of(c('PK_PATIENT_ID')))
   
-  
+  empi_before_merging <- union(rar_enc$EMPI, union(rar_dx$EMPI, union(rar_lab$EMPI, rar_demo$EMPI)))
+  msg <- sprintf("rar_merge: Before merging, %d unique EMPI's in the union of ENC, Lab, Dx, Demo.", length(unique(empi_before_merging)))
+  if(!is.null(logger)) logger$info(msg)
   
   # get the number of Dx's
   n_dx <- sum(grepl("^CODE|^Dx", names(rar_dx)))
   
-  
-
-  ## id <- "EMPI_DATE"
   
   ## Join
   if(join_to_ENC){
@@ -1214,8 +1325,35 @@ rar_merge <- function(rar_dx, rar_enc, rar_lab, rar_demo, id, pt_id = "EMPI",
   }
   
   
+  # add logger for join
+  if(join_to_ENC){
+    logger_join_header <- "rar_merge: All other data sets were joined to ENC data. After joining, "
+  }else{
+    logger_join_header <- "rar_merge: Full join was performed. After joining, "
+  }
+  
+  dx_icd_cat <- names(rar_mg)[grepl("^CODE", names(rar_mg))]
+  dx_h0_cat <- names(rar_mg)[grepl("^Dx_h0", names(rar_mg))]
+  dx_h1_cat <- names(rar_mg)[grepl("^Dx_h1", names(rar_mg))]
+  dx_h2_cat <- names(rar_mg)[grepl("^Dx_h2", names(rar_mg))]
+  n_labs <- sum(grepl("^Test", names(rar_mg))) + sum(names(rar_mg) %in% c("Aldo", "PRA", "DRC"))
+  
+  msg <- sprintf("%s, %d unique EMPI, %d unique EMPI_Date, %d unique ICD codes, %d Dx H0 Codes (%s), %d unique Dx H1 Codes (%s), %d unique Dx H2 Codes, %d unique tests, in %d total rows.", 
+                 logger_join_header, 
+                 length(unique(rar_mg$EMPI)), length(unique(rar_mg$EMPI_DATE)),length(unique(dx_icd_cat)), 
+                 length(unique(dx_h0_cat)), paste(unique(dx_h0_cat), collapse = ", "),
+                 length(unique(dx_h1_cat)), paste(unique(dx_h1_cat), collapse = ", "),
+                 length(unique(dx_h2_cat)),
+                 n_labs,
+                 nrow(rar_mg))
+  if(!is.null(logger)) logger$info(msg)
+  
+  
+  
+  
+  
   # get a vector of indicators for Dx codes in merged data set
-  icd_cols <- grepl("^CODE", names(rar_mg))
+  icd_cols <- grepl("^CODE|^Dx", names(rar_mg))
 
   ## For NA's in Dx, change them into 0
   rar_mg[, names(rar_mg)[icd_cols]] <- lapply(rar_mg[, names(rar_mg)[icd_cols]], 
@@ -1243,6 +1381,26 @@ rar_merge <- function(rar_dx, rar_enc, rar_lab, rar_demo, id, pt_id = "EMPI",
   rar_mg %<>% filter(ENC_DATE >= left_censor_date)
   
   
+  
+  dx_icd_cat <- names(rar_mg)[grepl("^CODE", names(rar_mg))]
+  dx_h0_cat <- names(rar_mg)[grepl("^Dx_h0", names(rar_mg))]
+  dx_h1_cat <- names(rar_mg)[grepl("^Dx_h1", names(rar_mg))]
+  dx_h2_cat <- names(rar_mg)[grepl("^Dx_h2", names(rar_mg))]
+  n_labs <- sum(grepl("^Test", names(rar_mg))) + sum(names(rar_mg) %in% c("Aldo", "PRA", "DRC"))
+  
+  msg <- sprintf("rar_merge: Returned merged data, left censored at %s, %d unique EMPI, %d unique EMPI_Date, %d unique ICD codes, %d Dx H0 Codes (%s), %d unique Dx H1 Codes (%s), %d unique Dx H2 Codes, %d unique tests, in %d total rows.", 
+                 left_censor_date,
+                 length(unique(rar_mg$EMPI)), length(unique(rar_mg$EMPI_DATE)),length(unique(dx_icd_cat)), 
+                 length(unique(dx_h0_cat)), paste(unique(dx_h0_cat), collapse = ", "),
+                 length(unique(dx_h1_cat)), paste(unique(dx_h1_cat), collapse = ", "),
+                 length(unique(dx_h2_cat)),
+                 n_labs,
+                 nrow(rar_mg))
+  if(!is.null(logger)) logger$info(msg)
+  
+  
+  
+  
   return(rar_mg)
 }
 
@@ -1260,6 +1418,11 @@ enc_to_pts <- function(rar_enc_level, sbp_lower_limit = 140, dbp_lower_limit = 9
   
   
   enc <- rar_enc_level %>% ungroup()
+  
+  
+  
+  msg <- sprintf("enc_to_pts: Before collapsing to pts level, %d EMPI's, in %d total rows.", length(unique(enc$EMPI)), nrow(enc))
+  if(!is.null(logger)) logger$info(msg)
   
   # Add demo's
   demo <- enc %>% 
@@ -1384,6 +1547,9 @@ enc_to_pts <- function(rar_enc_level, sbp_lower_limit = 140, dbp_lower_limit = 9
   
   pts %<>% full_join(., bp_sum, by="EMPI")
   
+  msg <- sprintf("enc_to_pts: BP: a time window of -365 to 7 regarding to RAR data was used to select BP's")
+  if(!is.null(logger)) logger$info(msg)
+  
   # Add Labs
   ## NOTE: currently using a 14-day time window for lab tests
   lab_cols <- grepl("^Test", names(enc))
@@ -1402,6 +1568,9 @@ enc_to_pts <- function(rar_enc_level, sbp_lower_limit = 140, dbp_lower_limit = 9
   
   
   pts %<>% full_join(., lab_sum, by="EMPI")
+  
+  msg <- sprintf("enc_to_pts: Labs: a time window of %d days prios or post to RAR data was used to select Labs", lab_time_window)
+  if(!is.null(logger)) logger$info(msg)
   
   
   # Add Dx's
@@ -1436,6 +1605,16 @@ enc_to_pts <- function(rar_enc_level, sbp_lower_limit = 140, dbp_lower_limit = 9
     full_join(., dx_sum_norm, by="EMPI")
     
   
+  
+  
 
+  n_labs <- sum(grepl("^Test", names(pts))) + sum(names(pts) %in% c("Aldo", "PRA", "DRC"))
+  
+  msg <- sprintf("enc_to_pts: Returned Patient Level data: %d unique EMPI, %d unique tests, in %d total rows.", 
+                 length(unique(pts$EMPI)),
+                 n_labs,
+                 nrow(pts))
+  if(!is.null(logger)) logger$info(msg)
+  
     return(pts)
 }

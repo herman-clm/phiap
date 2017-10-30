@@ -186,7 +186,7 @@ deidentify <- function(dat,
     if(!is.null(logger)) logger$info("deidentify: %d rows with %d Primary Keys are de-identified", nrow(tmp), length(unique(mapping_ls[[primary_key]])))
     
     write.csv(mapping_ls, file = out_file_for_mapping, row.names = FALSE)
-    if(!is.null(logger)) logger$info("deidentify: mapping file created")
+    if(!is.null(logger)) logger$info("deidentify: mapping file created [%s]", out_file_for_mapping)
     
   }else if(mode == "load"){
     # assert in_file_for_mapping exists
@@ -313,7 +313,7 @@ fread_epic <- function(dat_file, colClasses, logger = NULL){
   }
   
   if(!is.null(logger)){
-    logger$info("Raw data from file [%s] loaded in: Success", basename(dat_file))
+    logger$info("fread_epic: Raw data from file [%s] loaded in: Success", basename(dat_file))
   }
   
   return(dat)
@@ -360,5 +360,74 @@ icd_mapping <- function(dx_hierarchy_level=NULL, dx_hierarchy_level_value=NULL, 
   return(ret)
 }
 
+
+
+true_false_NA <- function(aldo, pra, criteria){
+  #' This function is used to test whether a given set of Aldo, PRA tests meet different lab criteria. This function will give a TRUE is any one row of test result meets the criteria. It is designed to use in dplyr, in summarise() function to determine whether a patient HAS EVER met the criteria.
+  #' @param aldo vector Aldo tests
+  #' @param pra vector PRA tests
+  #' @param criteria character Indicates what lab criteria to use; now it supports: RAR_Strict, RAR_PRA, RAR_Aldo, RAR_Lax, Aldo_Strict, Aldo_Lax, PRA_Strict, PRA_Lax, ALL_Strict, ALL_Lax
+  
+  
+  if(criteria == "RAR_Strict" | criteria == "ALL_Strict"){
+    aldo_criteria <- 15
+    pra_criteria <- 0.5
+    ratio_criteria <- 30
+  }else if(criteria == "RAR_PRA"){
+    aldo_criteria <- 15
+    pra_criteria <- 1
+    ratio_criteria <- 30
+  }else if(criteria == "RAR_Aldo"){
+    aldo_criteria <- 10
+    pra_criteria <- 0.5
+    ratio_criteria <- 30    
+  }else if(criteria == "RAR_Lax" | criteria == "ALL_Lax"){
+    aldo_criteria <- 10
+    pra_criteria <- 1
+    ratio_criteria <- 20   
+  }else if(criteria == "Aldo_Strict"){
+    aldo_criteria <- 15
+  }else if(criteria == "Aldo_Lax"){
+    aldo_criteria <- 10
+  }else if(criteria == "PRA_Strict"){
+    pra_criteria <- 0.5
+  }else if(criteria == "PRA_Lax"){
+    pra_criteria <- 1
+  }
+  
+  
+  df <- data.frame(aldo, pra)
+  
+  
+  if(grepl("^RAR", criteria)){
+    tmp <- df[!is.na(aldo) & !is.na(pra),]
+    if(nrow(tmp) == 0) return(NA)
+    
+    return(any(tmp$aldo >= aldo_criteria & tmp$pra <= pra_criteria & tmp$aldo/tmp$pra >= ratio_criteria))
+    
+    
+  }else if(grepl("^Aldo", criteria)){
+    aldo <- aldo[!is.na(aldo)]
+    if(length(aldo) == 0) return(NA)
+    
+    return(any(aldo >= aldo_criteria))
+  }else if(grepl("^PRA", criteria)){
+    pra <- pra[!is.na(pra)]
+    if(length(pra) == 0) return(NA)
+    
+    return(any(pra <= pra_criteria))
+  }else if(grepl("^ALL", criteria)){
+    aldo <- aldo[!is.na(aldo)]
+    pra <- pra[!is.na(pra)]
+    
+    
+    if(length(aldo) == 0 & length(pra) == 0) return(NA)
+    
+    ret <- sum(aldo >= aldo_criteria, pra <= pra_criteria, na.rm = T) != 0
+    return(ret)
+  }
+  
+  
+}
 
 
