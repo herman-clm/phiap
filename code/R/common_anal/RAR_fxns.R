@@ -796,7 +796,9 @@ load_Lab <- function(dat_file,  lab_source, adjust_up = 1.5, adjust_down = 0.5,
                     EMPI = 'character', PK_ENCOUNTER_ID = 'character', PK_ORDER_ID = 'character', ORDER_NAME = 'character', 
                     ORDER_ITEM_CODE = 'character', PK_ORDER_RESULT_ID = 'character', RESULT_VALUE = 'character',
                     UNIT_OF_MEASURE = 'character', RESULT_STATUS = 'character', RESULT_ITEM_CODE = 'character', 
-                    ORDERING_PROV = 'character', HAR_NUMBER = 'character')
+                    ORDERING_PROV = 'character', HAR_NUMBER = 'character', 
+                    ORDER_GROUP = 'character', RESULT_TEXT = 'character', RESULT_RESOURCE = "character", 
+                    ORES_SOURCE_LAST_UPDATE = "PDS_DateTime", LOINC_CODE = 'character')
   }else if(lab_source == "RAR"){
     colClasses <- c(ENC_DATE = "PDS_DateTime", ORDER_START_DATE = "PDS_DateTime",
                     RESULT_DATE = "PDS_DateTime", ORDER_DATE = "PDS_DateTime", PERFORMED_DATE = "PDS_DateTime", 
@@ -1501,6 +1503,9 @@ enc_to_pts <- function(rar_enc_level, sbp_lower_limit = 140, dbp_lower_limit = 9
   pts %<>% 
     full_join(., rar_sum, by="EMPI")
   
+  
+  # Add RAR Age
+  pts$rar_age <- as.numeric(difftime(pts$RAR_DATE, pts$BIRTH_DATE, units = "days")/365.25)
   
   # Add a RAR_DATE time stamp into enc
   enc %<>% 

@@ -417,14 +417,33 @@ true_false_NA <- function(aldo, pra, criteria){
     
     return(any(pra <= pra_criteria))
   }else if(grepl("^ALL", criteria)){
-    aldo <- aldo[!is.na(aldo)]
-    pra <- pra[!is.na(pra)]
+    
+    aldo_ls <- aldo >= aldo_criteria
+    pra_ls <- pra <= pra_criteria
+    ratio_ls <- aldo/pra >= ratio_criteria
+    
+    ret_ls <- aldo_ls + pra_ls + ratio_ls
+    
+    if(3 %in% ret_ls){
+      return(TRUE)
+    }else if(0 %in% ret_ls | 1 %in% ret_ls | 2 %in% ret_ls){
+      return(FALSE)
+    }else{
+      aldo <- aldo[!is.na(aldo)]
+      pra <- pra[!is.na(pra)]
+      if(length(aldo) == 0 & length(pra) == 0){
+        return(NA)
+      }
+        
+      ret <- sum(aldo >= aldo_criteria, pra <= pra_criteria, na.rm = T) != 0
+
+      return(ret)
+      
+    }
     
     
-    if(length(aldo) == 0 & length(pra) == 0) return(NA)
     
-    ret <- sum(aldo >= aldo_criteria, pra <= pra_criteria, na.rm = T) != 0
-    return(ret)
+    
   }
   
   

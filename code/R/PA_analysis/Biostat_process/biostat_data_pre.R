@@ -34,21 +34,23 @@ source("common_anal/RAR_fxns.R")
 ##       Parameters    ##
 #########################
 
-dat_version <- "v0.2.1.2"
+dat_version <- "v0.2.2"
 
 ## specify left-censoring date
 left_censor_date <- as.Date("1997-01-01")
 
 ## specify files
-enc_file <- "/data/raw_data/PA/HERMANDA_RAR_PTS_ENC.csv"
-dx_file <- "/data/raw_data/PA/HERMANDA_RAR_PTS_DX.csv"
-demo_file <- "/data/raw_data/PA/HERMANDA_RAR_PTS_DEMO.csv"
-lab_file <- "/data/raw_data/PA/HERMANDA_RAR_PTS_LABS.csv"
-
+enc_file <- "/data/raw_data/PA/RAR_v4/HERMANDA_RAR_PTS_ENC.csv"
+dx_file <- "/data/raw_data/PA/RAR_v4/HERMANDA_RAR_pts_dx.csv"
+demo_file <- "/data/raw_data/PA/RAR_v4/HERMANDA_RAR_pts_demo.csv"
+lab_file <- "/data/raw_data/PA/RAR_v4/HERMANDA_RAR_pts_labs.csv"
+empi_mrn_file <- "/data/raw_data/PA/RAR_v4/HERMANDA_RAR_EMPI_MRN.csv"
 
 ## Dx Codes
 CODE_Level <- "Dx_h0"
 hierarchy_dx <- c("Hyperaldo", "HTN", "Diabetes", "Sleep_Apnea")
+
+
 
 
 #########################
@@ -173,10 +175,12 @@ AVS_pts <- na.omit(AVS_pts)
 
 
 # read in EMPI ~ MRN for RAR patients: all columns as characters when reading in
-empi_MRN <- fread(input = "/data/raw_data/PA/HERMANDA_RAR_EMPI_MRN.csv", 
+empi_MRN <- fread(input = empi_mrn_file, 
                   header=TRUE, colClasses = "character")
 empi_MRN <- as.tibble(empi_MRN)
 
+## remove duplicates
+empi_MRN <- empi_MRN[!duplicated(empi_MRN),]
 
 empi <- empi_MRN %>% select(c(MRN, EMPI)) %>%
   group_by(MRN, EMPI) %>%
