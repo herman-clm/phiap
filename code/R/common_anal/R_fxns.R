@@ -3,7 +3,8 @@ suppressMessages(suppressWarnings(library(magrittr)))
 suppressMessages(suppressWarnings(library(dplyr)))
 suppressMessages(suppressWarnings(library(doParallel)))
 suppressMessages(suppressWarnings(library(readxl)))
-
+suppressMessages(suppressWarnings(library(geosphere)))
+suppressMessages(suppressWarnings(library(rlang)))
 
 ## @knitr general_purpose_fxns
 cores <- min(20, floor(detectCores() * 0.75))
@@ -321,7 +322,7 @@ fread_epic <- function(dat_file, colClasses, logger = NULL){
 }
 
 
-icd_mapping <- function(dx_hierarchy_level=NULL, dx_hierarchy_level_value=NULL, logger = NULL){
+icd_mapping <- function(icd_map_file, dx_hierarchy_level=NULL, dx_hierarchy_level_value=NULL, logger = NULL){
   #' This function is used to load in ICD-9/ICD-10 mappings and returns a mapping in tibble
   #' @param dx_hierarchy_level character Indicator for Dx_h0, Dx_h1, Dx_h2 categories
   #' @param dx_hierarchy_level_value vector A list of Hierarchy Dx's
@@ -330,7 +331,7 @@ icd_mapping <- function(dx_hierarchy_level=NULL, dx_hierarchy_level_value=NULL, 
   
 
 
-  dat <- read.csv(file = "/data/ref_data/icd_mapping_9_10.csv", 
+  dat <- read.csv(file = icd_map_file, 
                   header = TRUE, stringsAsFactors = FALSE, colClasses = "character")
   
   
@@ -448,5 +449,55 @@ true_false_NA <- function(aldo, pra, criteria){
   
   
 }
+
+
+
+
+
+zip_dist <- function(dat, zip_col, destination="19104", dist_func = distHaversine){
+  #' This function is used to compute distances on a spheroid between zip codes, 
+  #' and append this distance to the original data set
+  #' NOTE: this only calculate zip codes in 5 digits; any more digits will be truncated to 5 digit zip
+  #' NOTE: this function borrows information of ZIP codes to coordinates, 
+  #' which mapping file was obtained from https://www.unitedstateszipcodes.org/zip-code-database/
+  #' @param dat tibble Original data set with zip codes
+  #' @param zip_col character ZIP code column name in original data set
+  #' @param destination character Destination ZIP code
+  #' @param dist_func function 4 functions which implement 4 different methods to compute distances from 'geosphere' package,
+  #' 'Spherical law of cosines'[distCosine], 'Haversine'[distHaversine]
+  #' 'Vincenty Sphere'[distVincentySphere], 'Vincenty Ellipsoid'[distVincentyEllipsoid]
+  #' @return ret tibble Original data set with distances, in km
+  
+  # read in ZIP ~ coordinate mapping file
+  us_zipcodes <- read.csv(file = "../../ref_data/zip_code_database.csv", header = TRUE, stringsAsFactors = FALSE, colClasses = "character")
+  
+  # change longitude and latitude into numeric
+  us_zipcodes$longitude <- as.numeric(us_zipcodes$longitude)
+  us_zipcodes$latitude <- as.numeric(us_zipcodes$latitude)
+  
+
+  # get a patient zip code and cood data frame, keeping original order
+  # Aldo change name to ZIP
+  tmp <- dat %>% select(ZIP = UQ(zip_col)) %>% 
+    mutate(ZIP = substr(ZIP, 1, 5)) %>%
+    left_join(., us_zipcodes, by=c(ZIP = "zip"))
+  
+  
+  destination_cood <- us_zipcodes[which(us_zipcodes$zip == destination), c("longitude", "latitude")]
+  
+  
+  distances <- dist_func(p1=tmp[, c("longitude", "latitude")],
+                           p2=destination_cood)/1000
+  
+  dat$ZIP_distance_km <- distances
+  
+  return(dat)
+  
+  
+  
+  
+  
+}
+
 
 

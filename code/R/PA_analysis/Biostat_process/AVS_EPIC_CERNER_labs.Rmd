@@ -1,0 +1,194 @@
+---
+title: "Find AVS Labs in Pulled data set"
+output: 
+  html_document:
+    theme: journal
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    fig_width: 15
+    fig_height: 8
+    df_print: paged
+---
+
+```{r setup, echo=FALSE}
+suppressMessages(library(reshape2))
+suppressMessages(library(lubridate))
+suppressMessages(library(gridExtra))
+
+suppressMessages(library(tidyverse))
+suppressMessages(library(magrittr))
+suppressMessages(library(ini))
+suppressMessages(library(ggplot2))
+suppressMessages(library(kableExtra))
+suppressMessages(library(knitr))
+suppressMessages(library(scales))
+suppressMessages(library(reporttools))
+suppressMessages(library(readxl))
+suppressMessages(library(gtools))
+source("~/repos/Daniel_Herman_Aldosterone_2017_03/code/R/common_anal/RAR_fxns.R", chdir = TRUE)
+
+```
+
+```{r load_data, include=FALSE, cache=TRUE, cache.lazy=FALSE}
+lab_raw_e <- load_Lab(dat_file = "/data/raw_data/PA/RAR_v0.2.3/DINGXI_RAR_PTS_LABS.csv", 
+                    lab_source = "EPIC",
+                    left_censor_date = as.Date("1997-01-01"),
+                    adjust_up = 1.5, adjust_down = 0.5, logger=NULL)
+
+lab_raw_e$EMPI_DATE <- paste(lab_raw_e$EMPI, as.Date(lab_raw_e$ENC_DATE))
+
+```
+
+```{r load_data_CERNER, include=FALSE, cache=TRUE, cache.lazy=FALSE}
+lab_raw_c <- load_Lab(dat_file = "/data/raw_data/PA/RAR_v0.2.3/DINGXI_RAR_PTS_LABSC.csv", 
+                    lab_source = "CERNER",
+                    left_censor_date = as.Date("1997-01-01"),
+                    adjust_up = 1.5, adjust_down = 0.5, logger=NULL, allow_missing_columns = TRUE)
+
+lab_raw_c$EMPI_DATE <- paste(lab_raw_c$EMPI, as.Date(lab_raw_c$ENC_DATE))
+
+```
+
+# RESULT ITEM CODEs in EPIC and CERNER
+```{r epic}
+lab_raw_e %>% filter(grepl("^ivc aldosterone|^right aldosterone|^left aldosterone|^ivc cortisol|^right cortisol|^left cortisol", tolower(RESULT_ITEM_CODE))) %>%
+  count(RESULT_ITEM_CODE)
+```
+
+
+```{r cerner}
+lab_raw_c %>% filter(grepl("^left|^right|^ivc", tolower(RESULT_ITEM_CODE))) %>%
+  count(RESULT_ITEM_CODE)
+```
+So when searching Left/Right/IVC in CERNER, we only got Aldo result. Then the pairing of the three:
+```{r cerner_pair}
+lab_raw_c %>% filter(grepl("^left|^right|^ivc", tolower(RESULT_ITEM_CODE))) %>%
+  group_by(EMPI_DATE) %>%
+  summarise(N = n_distinct(RESULT_ITEM_CODE)) %>%
+  count(N)
+```
+```{r epic_pair}
+lab_raw_e %>% filter(grepl("^left aldosterone|^right aldosterone|^ivc aldosterone", tolower(RESULT_ITEM_CODE))) %>%
+  mutate(RIC= case_when(RESULT_ITEM_CODE %in% c("IVC Aldosterone", "IVC ALDOSTERONE") ~ "IVC ALDO",
+                                        RESULT_ITEM_CODE %in% c("IVC CORTISOL", "IVC CORTISOL SAMPLE") ~ "IVC CORTISOL",
+                                        RESULT_ITEM_CODE %in% c("Left Aldos","LEFT ALDOSTERONE") ~ "LEFT ALDO",
+                                        RESULT_ITEM_CODE %in% c("LEFT CORTISOL","LEFT CORTISOL SAMPLE") ~ "LEFT CORTISOL",
+                                        RESULT_ITEM_CODE %in% c("Right Aldos","RIGHT ALDOSTERONE") ~ "RIGHT ALDO",
+                                        RESULT_ITEM_CODE %in% c("RIGHT CORTISOL","RIGHT CORTISOL SAMPLE") ~ "RIGHT CORTISOL",
+                                        TRUE ~ "Unknown"
+                                        )) %>%
+  filter(RIC != "Unknown") %>%
+  group_by(EMPI_DATE) %>%
+  summarise(N = n_distinct(RIC)) %>%
+  count(N)
+```
+
+
+```{r cerner_cortisol}
+lab_raw_c %>% filter(grepl("cortisol", tolower(RESULT_ITEM_CODE))) %>%
+  count(RESULT_ITEM_CODE)
+```
+No Left/Right Cortisol ...
+
+
+# Finding AVS through RESULT_ITEM_CODE
+```{r pts_labs}
+lab_epic <- lab_raw_e %>% filter(grepl("^ivc aldosterone|^right aldosterone|^left aldosterone|^ivc cortisol|^right cortisol|^left cortisol", tolower(RESULT_ITEM_CODE))) %>%
+  select(EMPI, EMPI_DATE, RESULT_ITEM_CODE, RESULT_DATE, RESULT_VALUE)
+lab_cerner <- lab_raw_c %>% filter(grepl("^left|^right|^ivc", tolower(RESULT_ITEM_CODE)))  %>% 
+  select(EMPI, EMPI_DATE, RESULT_ITEM_CODE, RESULT_DATE, RESULT_VALUE)
+
+lab_all <- rbind(lab_epic, lab_cerner)
+
+lab_all %>% count(RESULT_ITEM_CODE)
+lab_all %>% filter(!is.na(RESULT_VALUE)) %>% count(RESULT_ITEM_CODE)
+```
+
+Now we clean this a little, by renaming RESULT_ITEM_CODE:
+```{r all_lab_rename}
+lab_all_rename <- lab_all
+lab_all_rename %<>% mutate(RIC= case_when(RESULT_ITEM_CODE %in% c("IVC Aldosterone", "IVC ALDOSTERONE") ~ "IVC ALDO",
+                                        RESULT_ITEM_CODE %in% c("IVC CORTISOL", "IVC CORTISOL SAMPLE") ~ "IVC CORTISOL",
+                                        RESULT_ITEM_CODE %in% c("Left Aldos","LEFT ALDOSTERONE") ~ "LEFT ALDO",
+                                        RESULT_ITEM_CODE %in% c("LEFT CORTISOL","LEFT CORTISOL SAMPLE") ~ "LEFT CORTISOL",
+                                        RESULT_ITEM_CODE %in% c("Right Aldos","RIGHT ALDOSTERONE") ~ "RIGHT ALDO",
+                                        RESULT_ITEM_CODE %in% c("RIGHT CORTISOL","RIGHT CORTISOL SAMPLE") ~ "RIGHT CORTISOL",
+                                        TRUE ~ "Unknown"
+                                        ))
+
+
+lab_all_rename %>% group_by(EMPI_DATE) %>%
+  summarise(N = n_distinct(RIC)) %>%
+  count(N)
+```
+
+
+
+Comparing with EPIC Result:
+```{r aldo_cortisol_pair}
+lab_raw_e %>% 
+  filter(grepl("^ivc aldosterone|^right aldosterone|^left aldosterone|^ivc cortisol|^right cortisol|^left cortisol", tolower(RESULT_ITEM_CODE))) %>%
+  mutate(RIC= case_when(RESULT_ITEM_CODE %in% c("IVC Aldosterone", "IVC ALDOSTERONE") ~ "IVC ALDO",
+                                        RESULT_ITEM_CODE %in% c("IVC CORTISOL", "IVC CORTISOL SAMPLE") ~ "IVC CORTISOL",
+                                        RESULT_ITEM_CODE %in% c("Left Aldos","LEFT ALDOSTERONE") ~ "LEFT ALDO",
+                                        RESULT_ITEM_CODE %in% c("LEFT CORTISOL","LEFT CORTISOL SAMPLE") ~ "LEFT CORTISOL",
+                                        RESULT_ITEM_CODE %in% c("Right Aldos","RIGHT ALDOSTERONE") ~ "RIGHT ALDO",
+                                        RESULT_ITEM_CODE %in% c("RIGHT CORTISOL","RIGHT CORTISOL SAMPLE") ~ "RIGHT CORTISOL",
+                                        TRUE ~ "Unknown"
+                                        )) %>%
+
+  
+  group_by(EMPI_DATE) %>%
+  summarise(N = n_distinct(RIC)) %>% ungroup() %>%
+  count(N)
+```
+
+
+# Get ORDER_ITEM_CODE/RESULT_ITEM_CODE for these 8 tests in CERNER
+## In CERNER, the relationship between these 8 RIC and ORDER_ITEM_CODE
+```{r get_RIC_to_OID}
+lab_raw_c %>% 
+  filter(!is.na(RESULT_VALUE)) %>%
+  filter(grepl("^ivc aldosterone|^right aldosterone|^left aldosterone|^ivc cortisol|^right cortisol|^left cortisol|^lcort|^c lcort", tolower(RESULT_ITEM_CODE))) %>%
+  group_by(RESULT_ITEM_CODE, ORDER_ITEM_CODE) %>%
+  summarise(N = n())
+```
+
+Verse is true?
+```{r get_OID_to_RIC}
+oic_cerner <- lab_raw_c %>% 
+  filter(!is.na(RESULT_VALUE)) %>%
+  filter(grepl("^ivc aldosterone|^right aldosterone|^left aldosterone|^ivc cortisol|^right cortisol|^left cortisol", tolower(RESULT_ITEM_CODE))) %>% distinct(ORDER_ITEM_CODE)
+
+lab_raw_c %>% 
+  filter(!is.na(RESULT_VALUE)) %>%
+  filter(ORDER_ITEM_CODE %in% oic_cerner$ORDER_ITEM_CODE) %>%
+  group_by(ORDER_ITEM_CODE, RESULT_ITEM_CODE) %>%
+  summarise(N = n())
+```
+Correct: these 6 RESULT_ITEM_CODE is one-to-one mapped to the 6 ORDER_ITEM_CODE in CERNER.   
+
+
+## Could we find same RESULT_ITEM_CODE/ORDER_ITEM_CODE in EPIC?
+```{r epic_get_RIC_to_OID}
+lab_raw_e %>% 
+  filter(!is.na(RESULT_VALUE)) %>%
+  filter(grepl("^ivc aldosterone|^right aldosterone|^left aldosterone|^ivc cortisol|^right cortisol|^left cortisol|^lcort|^c lcort", tolower(RESULT_ITEM_CODE))) %>%
+  group_by(RESULT_ITEM_CODE, ORDER_ITEM_CODE) %>%
+  summarise(N = n())
+```
+Exactly same as CERNER.   
+Verse is same?
+
+```{r epic_get_OID_to_RIC}
+lab_raw_e %>% 
+  filter(!is.na(RESULT_VALUE)) %>%
+  filter(ORDER_ITEM_CODE %in% oic_cerner$ORDER_ITEM_CODE) %>%
+  group_by(ORDER_ITEM_CODE, RESULT_ITEM_CODE) %>%
+  summarise(N = n())
+```
+TRUE.   
+
+Conclusion: for these 8 exact RESULT_ITEM_CODE's and ORDER_ITEM_CODE's, they should be explicitly excluded from EPIC, and included from CERNER.
+

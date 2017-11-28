@@ -1,0 +1,148 @@
+---
+title: "Distances between ZIPs"
+output: 
+  html_document:
+    theme: journal
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    fig_width: 15
+    fig_height: 8
+    df_print: paged
+---
+
+```{r setup, echo=FALSE}
+suppressMessages(library(reshape2))
+suppressMessages(library(lubridate))
+suppressMessages(library(gridExtra))
+
+suppressMessages(library(tidyverse))
+suppressMessages(library(magrittr))
+suppressMessages(library(ini))
+suppressMessages(library(ggplot2))
+
+suppressMessages(library(knitr))
+suppressMessages(library(scales))
+suppressMessages(library(ggmap))
+# suppressMessages(library(reporttools))
+# suppressMessages(library(readxl))
+# suppressMessages(library(gtools))
+source("~/repos/Daniel_Herman_Aldosterone_2017_03/code/R/common_anal/RAR_fxns.R", chdir = TRUE)
+
+```
+
+# ZIP Code in Demo
+```{r load_demo_data, include=FALSE, cache=TRUE, cache.lazy=FALSE}
+
+## Patient Demo
+rar_demo <- load_RAR_PtDemo(dat_file = "/data/raw_data/PA/RAR_v0.2.3/DINGXI_RAR_PTS_DEMO.csv", logger = NULL)
+
+```
+Any patients have multiple ZIP's?
+```{r raw_demo_zips}
+rar_demo_raw <- fread("/data/raw_data/PA/RAR_v0.2.3/DINGXI_RAR_PTS_DEMO.csv", stringsAsFactors = FALSE)
+rar_demo_raw %>% group_by(EMPI) %>%
+  summarise(N= n_distinct(ZIP)) %>%
+  filter(N > 1)
+
+```
+Actually, there are only 3 patients who have multiple ZIP codes, and they have at most 2. Thus, we could ignore them, and use the original algorithm for demo.
+
+```{r demo_zip_NA}
+rar_demo %>% filter(ZIP %in% c("", "00000"))
+```
+
+For those with "00000" as zip codes, put them as NA.
+```{r use_NA}
+rar_demo %<>% mutate(ZIP = ifelse(ZIP == "00000", NA, ZIP))
+```
+Unique ZIP codes in Patient Demo:
+```{r demo_unique_zip}
+length(unique(rar_demo$ZIP))
+```
+
+
+# ZIP in ENC
+```{r load_enc_data, include=FALSE, cache=TRUE, cache.lazy=FALSE}
+rm(rar_demo_raw)
+## Patient Demo
+rar_enc <- load_RAR_enc(dat_file = "/data/raw_data/PA/RAR_v0.2.3/DINGXI_RAR_PTS_ENC.csv", 
+                        bp_only = FALSE, EMPI_DATE_Level = TRUE, outpatient_only = TRUE, logger = NULL)
+
+```
+NA's? 00000? ""?
+```{r check_NA}
+table(rar_enc$MASTER_LOCATION_ZIP, useNA = 'always')
+```
+
+Get MASTER_LOCATION_CODE ~ ZIP only table:
+```{r tb}
+enc_zip <- rar_enc %>% select(MASTER_LOCATION_CODE, MASTER_LOCATION_DESCRIPTION, MASTER_LOCATION_ZIP)
+# remove dups
+enc_zip <- enc_zip[!duplicated(enc_zip),]
+sum(is.na(enc_zip$MASTER_LOCATION_ZIP))
+```
+
+Impute ZIP bu MASTER_LOCATION_CODE:
+```{r try_impute}
+temp <- enc_zip %>% group_by(MASTER_LOCATION_DESCRIPTION) %>%
+  arrange(MASTER_LOCATION_ZIP) %>%
+  mutate(new_zip = MASTER_LOCATION_ZIP[1])
+sum(is.na(temp$MASTER_LOCATION_ZIP))
+```
+
+Also checked MASTER_LOCATION_ADDRESS_1, MASTER_LOCATION_ADDRESS_2, MASTER_LOCATION_CITY on PDS, they are all missing when ZIP is missing: which means these 3 info will not help on imputing NA ZIP's.
+
+## How Many LOC's, and how many missing?
+```{r number_loc}
+length(unique(rar_enc$MASTER_LOCATION_CODE))
+```
+```{r n_missing}
+rar_enc %>% group_by(MASTER_LOCATION_CODE) %>%
+  filter(all(is.na(MASTER_LOCATION_ZIP))) %>%
+  summarise(N = n()) %>%
+  arrange(desc(N))
+```
+There are 1252 out of 1336 master locations (MASTER_LOCATION_CODE) that have missing ZIP's. These 1252 missing ZIP's in MASTER_LOCATION_CODE account for `r percent(sum(is.na(rar_enc$MASTER_LOCATION_ZIP))/nrow(rar_enc))` of encounters.
+
+```{r n_missing_check}
+rar_enc %>% group_by(MASTER_LOCATION_ENTITY, MASTER_LOCATION_CODE, MASTER_LOCATION_DESCRIPTION) %>%
+  filter(all(is.na(MASTER_LOCATION_ZIP))) %>%
+  ungroup() %>%
+  select(MASTER_LOCATION_ENTITY, MASTER_LOCATION_CODE, MASTER_LOCATION_DESCRIPTION) %>%
+  distinct()
+
+```
+
+```{r output_zip_service,eval=FALSE, include=FALSE}
+rar_enc %>% group_by(MASTER_LOCATION_ENTITY, MASTER_LOCATION_CODE, MASTER_LOCATION_DESCRIPTION) %>%
+  filter(all(is.na(MASTER_LOCATION_ZIP))) %>%
+  summarise(N=n()) %>%
+  write.csv(., file="missing_zips.csv", row.names = F)
+
+
+rar_enc %>% group_by(SERVICE_MASTER_CODE, SERVICE_MASTER_DESCRIPTION) %>%
+  summarise(N = n()) %>%
+  write.csv(., file="service.csv", row.names=F)
+```
+
+
+
+# Distances Between Patient ZIP and 19104
+There are `r length(unique(rar_demo$ZIP))` unique ZIP codes in patients.
+```{r dis}
+pts_zip <- data.frame(pt_zip = unique(rar_demo$ZIP), loc_zip="19104")
+
+write.csv(pts_zip, file="zip.csv", row.names=F)
+
+tmp <- mapdist(from = as.character(pts_zip$pt_zip), to = as.character(pts_zip$loc_zip), mode="driving")
+```
+
+
+
+```{r}
+pts_zip$pt_zip[(grepl("^0", pts_zip$pt_zip))]
+```
+
+
+

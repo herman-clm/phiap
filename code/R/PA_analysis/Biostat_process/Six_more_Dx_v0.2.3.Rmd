@@ -1,0 +1,300 @@
+---
+title: "6 More Dx on v0.2.3 Bios Data"
+output: 
+  html_document:
+    theme: journal
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    fig_width: 15
+    fig_height: 8
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, autodep=TRUE)
+
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, 
+                      message = FALSE)
+
+suppressMessages(library(reshape2))
+suppressMessages(library(lubridate))
+suppressMessages(library(gridExtra))
+
+suppressMessages(library(tidyverse))
+suppressMessages(library(magrittr))
+suppressMessages(library(ini))
+suppressMessages(library(ggplot2))
+suppressMessages(library(kableExtra))
+suppressMessages(library(knitr))
+suppressMessages(library(scales))
+suppressMessages(library(reporttools))
+suppressMessages(library(readxl))
+suppressMessages(library(gtools))
+source("../../common_anal/R_fxns.R")
+
+```
+
+
+```{r load_data, include=FALSE, cache=TRUE, cache.lazy=FALSE}
+# load("/data/processed_data/RAR/bios_data_enc_pts_v0.2.2.RData")
+load("/data/processed_data/RAR/bios_data_enc_pts_v0.2.3.RData")
+
+```
+
+There are now `r length(unique(pts$EMPI))` patients in data set v0.2.3.   
+
+# PA
+By using a conservative version of PA Dx [h2: E26.0_9], there are `r sum(pts$Dx_h2_E26.0_9_n >= 1)` patients having PA Dx, `r sum(pts$Dx_h2_E26.0_9_n >= 2)` patinets having more than 1 PA Dx.   
+```{r with_or_without_PA}
+pts_1 <- pts %>% mutate(E26.0_9 = ifelse(Dx_h2_E26.0_9_n >0, "w/ E26.0_9", "w/o E26.0_9"), 
+                       D35 = ifelse(Dx_h2_D35_n >0, "w/ D35", "w/o D35"))
+table(pts_1$E26.0_9, pts_1$D35)
+```
+
+Only for additional PA Dx, 227.0/D35.00 codes, there are `r sum(pts$Dx_h2_D35_n >= 1)` patients having D35[h2] codes, `r sum(pts$Dx_h2_D35_n >= 2)` patients having more than 1 D35 codes.
+```{r two_or_more_PA}
+pts_2 <- pts %>% mutate(E26.0_9 = factor(ifelse(Dx_h2_E26.0_9_n >1, "2+ E26.0_9", "2- E26.0_9"), levels=c("2+ E26.0_9", "2- E26.0_9")), 
+                       D35 = factor(ifelse(Dx_h2_D35_n >1, "2+ D35", "2- D35"), levels=c("2+ D35", "2- D35")))
+table(pts_2$E26.0_9, pts_2$D35)
+```
+Thus we could find that if we use E26.0_9 as PA dx, there will be `r sum(pts$Dx_h2_E26.0_9_n >= 2)` patinets that have 2+ PA Dx, but if we include D35, there will be `r table(pts_2$E26.0_9, pts_2$D35)[2,1]` more patients that meet the criteria, which almost triples the previous number.
+
+
+
+
+
+# HA
+For previous Other hyperaldo [h2: E26.1_8], there are `r sum(pts$Dx_h2_E26.1_8_n>0)` patients having it - this number matches that queried directly from PDS; and for E27[h2] only, there are `r sum(pts$Dx_h2_E27_n>0)` patients having it.
+```{r ha}
+pts_3 <- pts %>% mutate(E26.1_8 = ifelse(Dx_h2_E26.1_8_n >0, "w/ E26.1_8", "w/o E26.1_8"), 
+                       E27 = ifelse(Dx_h2_E27_n >0, "w/ E27", "w/o E27"))
+table(pts_3$E26.1_8, pts_3$E27)
+```
+This table shows that E27 is so widely used. Also, for most cases, E27 and E26.1_8 are used separately (3 ~ 33).
+```{r new_grp}
+pts_new <- pts %>% mutate(grp = ifelse(Dx_h2_E26.0_9_n >0, 'E26.0_9', ifelse(Dx_h2_D35_n >0, 'D35','non_PA')))
+pts_new$grp <- factor(pts_new$grp, levels = c('E26.0_9', 'D35','non_PA'))
+```
+
+## Differences between groups of PA/non-PA
+#### Aldo {-}
+```{r aldo, echo=FALSE}
+pts_new %>% ggplot(.) +
+  geom_boxplot(aes(x=grp, y=log(Aldo))) + labs(title="log(Aldo)") + 
+  theme(plot.title = element_text(hjust=0.5))
+```
+```{r aldo_anova}
+fit_aldo <- aov(Aldo ~ grp, data = pts_new)
+summary(fit_aldo)
+TukeyHSD(fit_aldo)
+```
+
+#### PRA {-}
+```{r PRA, echo=FALSE}
+pts_new %>% ggplot(.) +
+  geom_boxplot(aes(x=grp, y=log(PRA))) + labs(title="log(PRA)") + 
+  theme(plot.title = element_text(hjust=0.5))
+```
+```{r pra_anova}
+fit_pra <- aov(PRA ~ grp, data = pts_new)
+summary(fit_pra)
+TukeyHSD(fit_pra)
+```
+
+#### DRC {-}
+```{r DRC, echo=FALSE}
+pts_new %>% ggplot(.) +
+  geom_boxplot(aes(x=grp, y=log(DRC))) + labs(title="log(DRC)") + 
+  theme(plot.title = element_text(hjust=0.5))
+```
+
+#### Potassium {-}
+```{r POTASSIUM, echo=FALSE}
+pts_new %>% ggplot(.) +
+  geom_boxplot(aes(x=grp, y=log(`Test_POTASSIUM_mmol/L`))) + labs(title="log(Potassium)") +
+  theme(plot.title = element_text(hjust=0.5))
+```
+```{r potassium_anova}
+fit_potassium <- aov(`Test_POTASSIUM_mmol/L` ~ grp, data = pts_new)
+summary(fit_potassium)
+TukeyHSD(fit_potassium)
+```
+
+
+#### High BP Proportion {-}
+```{r bp, echo=FALSE}
+pts_new %>% ggplot(.) +
+  geom_boxplot(aes(x=grp, y=high_BP_prop)) + labs(title="High BP Proportion") +
+  theme(plot.title = element_text(hjust=0.5))
+```
+
+#### Dx_n {-}
+```{r Dx_n, echo=FALSE}
+pts_new %>% ggplot(.) +
+  geom_boxplot(aes(x=grp, y=log(Dx_n))) + labs(title="Number of Dx's") +
+  theme(plot.title = element_text(hjust=0.5))
+```
+
+#### Encounter_n {-}
+```{r enc_n, echo=FALSE}
+pts_new %>% ggplot(.) +
+  geom_boxplot(aes(x=grp, y=log(enc_n))) + labs(title="Number of Encounters") +
+  theme(plot.title = element_text(hjust=0.5))
+```
+
+#### RACE {-}
+```{r RACE}
+pts_new %>% group_by(grp) %>%
+  mutate(N = n()) %>% ungroup() %>%
+  group_by(grp, RACE_MASTER_CODE) %>%
+  summarise(pct = n()/max(N)) %>%
+  ggplot(.) + 
+  geom_bar(aes(x=RACE_MASTER_CODE, y=pct, group=grp, fill=grp), position="dodge", stat="identity")
+```
+
+#### Encounter Entity {-}
+```{r enc_entity, cache.lazy=FALSE, echo=FALSE}
+rar_mg_new <- rar_mg %>% mutate(grp = ifelse(Dx_h2_E26.0_9 >0, 'E26.0_9', ifelse(Dx_h2_D35 >0, 'D35','non_PA')))
+rar_mg_new$grp <- factor(rar_mg_new$grp, levels = c('E26.0_9', 'D35','non_PA'))
+
+rar_mg_new %>% group_by(grp) %>%
+  mutate(N = n()) %>% ungroup() %>%
+  group_by(grp, MASTER_LOCATION_ENTITY) %>%
+  summarise(pct = n()/max(N)) %>%
+  ggplot(.) + 
+  geom_bar(aes(x=MASTER_LOCATION_ENTITY, y=pct, group=grp, fill=grp), position="dodge", stat="identity") +
+  labs(title="Encounter Entity") + 
+  theme(plot.title = element_text(hjust=0.5))
+```
+
+#### Encounter Location {-}
+```{r location_enc, fig.width=20, fig.height=15, echo=FALSE}
+rar_mg_new %>% group_by(grp) %>%
+  mutate(N = n()) %>% ungroup() %>%
+  group_by(grp, MASTER_LOCATION_DESCRIPTION) %>%
+  summarise(pct = n()/max(N)) %>%
+  ggplot(.) + 
+  geom_bar(aes(x=MASTER_LOCATION_DESCRIPTION, y=pct, group=grp, fill=grp), position="dodge", stat="identity") + 
+  theme(axis.text.x = element_blank()) +
+  geom_label(aes(x = MASTER_LOCATION_DESCRIPTION, y = pct, group=grp, label= ifelse(pct >= 0.03, MASTER_LOCATION_DESCRIPTION, NA)), stat = "identity") +
+    labs(title="Encounter Location") + 
+  theme(plot.title = element_text(hjust=0.5))
+
+```
+
+# Dx associated with RAR Lab Tests
+## PA with RAR Lab
+For E26.0_9 only, the encounters with RAR lab tests that has a PA Dx with it:
+```{r e26_pa_lab}
+rar_mg %>% filter(!is.na(Aldo) | !is.na(PRA) | !is.na(DRC)) %>% 
+  group_by(Dx_h2_E26.0_9) %>%
+  summarise(N = n())
+```
+For D35 only:
+```{r d35_pa_lab}
+rar_mg %>% filter(!is.na(Aldo) | !is.na(PRA) | !is.na(DRC)) %>%
+  group_by(Dx_h2_D35) %>%
+  summarise(N=n())
+```
+
+```{r cross_pa}
+temp <- rar_mg %>% filter(!is.na(Aldo) | !is.na(PRA) | !is.na(DRC))
+table(temp$Dx_h2_E26.0_9, temp$Dx_h2_D35)
+```
+
+## HA with RAR Lab
+For E26.1_8 only, the encounters with RAR lab tests that has a HA Dx with it:
+```{r e26_ha_lab}
+rar_mg %>% filter(!is.na(Aldo) | !is.na(PRA) | !is.na(DRC)) %>% 
+  group_by(Dx_h2_E26.1_8) %>%
+  summarise(N = n())
+```
+For D35 only:
+```{r e27_ha_lab}
+rar_mg %>% filter(!is.na(Aldo) | !is.na(PRA) | !is.na(DRC)) %>%
+  group_by(Dx_h2_E27) %>%
+  summarise(N=n())
+```
+
+```{r cross_ha}
+temp <- rar_mg %>% filter(!is.na(Aldo) | !is.na(PRA) | !is.na(DRC))
+table(temp$Dx_h2_E26.1_8, temp$Dx_h2_E27)
+```
+This shows that for most RAR-lab encounters, they are not associated with any PA/HA Dx.
+
+
+# Difference when integrating with RAR Strict Criteria
+Apply RAR Strict criteria on encounter level:   
+
+### Both E26.0_9 and D35 {-}
+```{r with_RAR_strict_both_criteria_enc, echo=FALSE}
+rar_mg %>% group_by(EMPI) %>%
+  summarise(RAR_Strict_criteria = factor(true_false_NA(Aldo, PRA, "RAR_Strict"), levels=c(TRUE, FALSE)),
+            PA_Dx_C = factor(sum(Dx_h1_Primary_aldosteronism, na.rm=TRUE) >= 2, levels=c(TRUE, FALSE))) %>%
+  select(PA_Dx_C, RAR_Strict_criteria) %>%
+  table(., useNA="always")
+
+```
+
+
+
+### Only E26.0_9 {-}
+```{r with_RAR_strict_E26_criteria_enc, echo=FALSE}
+rar_mg %>% group_by(EMPI) %>%
+  summarise(RAR_Strict_criteria = factor(true_false_NA(Aldo, PRA, "RAR_Strict"), levels=c(TRUE, FALSE)),
+            PA_Dx_C = factor(sum(Dx_h2_E26.0_9, na.rm=TRUE) >= 2, levels=c(TRUE, FALSE))) %>%
+  select(PA_Dx_C, RAR_Strict_criteria) %>%
+  table(., useNA="always")
+
+```
+
+### Only D35 {-}
+```{r with_RAR_strict_D35_criteria_enc, echo=FALSE}
+rar_mg %>% group_by(EMPI) %>%
+  summarise(RAR_Strict_criteria = factor(true_false_NA(Aldo, PRA, "RAR_Strict"), levels=c(TRUE, FALSE)),
+            PA_Dx_C = factor(sum(Dx_h2_D35, na.rm=TRUE) >= 2, levels=c(TRUE, FALSE))) %>%
+  select(PA_Dx_C, RAR_Strict_criteria) %>%
+  table(., useNA="always")
+
+```
+
+
+# Difference when integrating with RDB
+### Both E26.0_9 and D35 {-}
+```{r rdb_both_criteria_enc, echo=FALSE}
+rar_mg %>% group_by(EMPI) %>%
+  summarise(RDB = factor(any(PA_AVS_tot_0115), levels=c(TRUE, FALSE)),
+            PA_Dx_C = factor(sum(Dx_h1_Primary_aldosteronism, na.rm=TRUE) >= 2, levels=c(TRUE, FALSE))) %>%
+  select(PA_Dx_C, RDB) %>%
+  table(., useNA="always")
+
+```
+
+
+
+### Only E26.0_9 {-}
+```{r rdb_E26_criteria_enc, echo=FALSE}
+rar_mg %>% group_by(EMPI) %>%
+  summarise(RDB = factor(any(PA_AVS_tot_0115), levels=c(TRUE, FALSE)),
+            PA_Dx_C = factor(sum(Dx_h2_E26.0_9, na.rm=TRUE) >= 2, levels=c(TRUE, FALSE))) %>%
+  select(PA_Dx_C, RDB) %>%
+  table(., useNA="always")
+
+```
+
+
+
+
+### Only D35 {-}
+```{r rdb_D35_criteria_enc, echo=FALSE}
+rar_mg %>% group_by(EMPI) %>%
+  summarise(RDB = factor(any(PA_AVS_tot_0115), levels=c(TRUE, FALSE)),
+            PA_Dx_C = factor(sum(Dx_h2_D35, na.rm=TRUE) >= 2, levels=c(TRUE, FALSE))) %>%
+  select(PA_Dx_C, RDB) %>%
+  table(., useNA="always")
+
+```
+So from results above for integrating with both RAR Strict and RDB, it will largely increase the discordanct groups when using both E26 and D35 codes, by adding more patients into PA True group.
+
+

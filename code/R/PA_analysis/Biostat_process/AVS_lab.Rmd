@@ -1,0 +1,454 @@
+---
+title: "Find AVS Labs in Pulled data set"
+output: 
+  html_document:
+    theme: journal
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    fig_width: 15
+    fig_height: 8
+    df_print: paged
+---
+
+```{r setup, echo=FALSE}
+suppressMessages(library(reshape2))
+suppressMessages(library(lubridate))
+suppressMessages(library(gridExtra))
+
+suppressMessages(library(tidyverse))
+suppressMessages(library(magrittr))
+suppressMessages(library(ini))
+suppressMessages(library(ggplot2))
+
+suppressMessages(library(knitr))
+suppressMessages(library(scales))
+# suppressMessages(library(reporttools))
+# suppressMessages(library(readxl))
+# suppressMessages(library(gtools))
+source("~/repos/Daniel_Herman_Aldosterone_2017_03/code/R/common_anal/RAR_fxns.R", chdir = TRUE)
+
+```
+
+```{r load_data, include=FALSE, cache=TRUE, cache.lazy=FALSE}
+lab_raw <- load_Lab(dat_file = "/data/raw_data/PA/RAR_v0.2.3/DINGXI_RAR_PTS_LABSC.csv", 
+                    lab_source = "CERNER",
+                    left_censor_date = as.Date("1997-01-01"),
+                    adjust_up = 1.5, adjust_down = 0.5, logger=NULL)
+
+lab_raw$EMPI_DATE <- paste(lab_raw$EMPI, as.Date(lab_raw$ENC_DATE))
+
+lab_raw_no_na <- lab_raw %>% filter(!is.na(RESULT_VALUE))
+```
+
+# Finding AVS through RESULT_ITEM_CODE
+
+### "adrenal" {-}
+```{r adrenal_nm, echo=FALSE}
+unique(lab_raw$RESULT_ITEM_CODE)[grepl("adrenal", tolower(unique(lab_raw$RESULT_ITEM_CODE)))]
+```
+
+```{r adrenal}
+lab_raw_no_na %>% filter(grepl("adrenal", tolower(RESULT_ITEM_CODE))) %>%
+  group_by(RESULT_ITEM_CODE) %>%
+  summarise(N = n()) %>%
+  arrange(desc(N))
+```
+
+
+### "cortisol" {-}
+```{r cortisol_nm, echo=FALSE}
+unique(lab_raw$RESULT_ITEM_CODE)[grepl("cortisol", tolower(unique(lab_raw$RESULT_ITEM_CODE)))]
+```
+
+```{r cortisol}
+lab_raw_no_na %>% filter(grepl("cortisol", tolower(RESULT_ITEM_CODE))) %>%
+  group_by(RESULT_ITEM_CODE) %>%
+  summarise(N = n()) %>%
+  arrange(desc(N))
+```
+
+### "c lcort","lcort" {-}
+```{r cort, echo=FALSE}
+unique(lab_raw$RESULT_ITEM_CODE)[grepl("^c lcort|^lcort", tolower(unique(lab_raw$RESULT_ITEM_CODE)))]
+```
+
+```{r cort_n}
+lab_raw %>% 
+  filter(!is.na(RESULT_VALUE)) %>%
+  filter(grepl("^c lcort|^lcort", tolower(RESULT_ITEM_CODE))) %>%
+  group_by(RESULT_ITEM_CODE) %>%
+  summarise(N = n()) %>%
+  arrange(desc(N))
+```
+
+
+
+
+
+### "icort"{-}
+```{r icort, echo=FALSE}
+unique(lab_raw$RESULT_ITEM_CODE)[grepl("icort", tolower(unique(lab_raw$RESULT_ITEM_CODE)))]
+```
+
+```{r icort_n, echo=FALSE}
+lab_raw %>% 
+  filter(!is.na(RESULT_VALUE)) %>%
+  filter(grepl("icort", tolower(RESULT_ITEM_CODE))) %>%
+  group_by(RESULT_ITEM_CODE) %>%
+  summarise(N = n()) %>%
+  arrange(desc(N))
+```
+No "rcort".
+
+
+### "rcort"{-}
+```{r rcort, echo=FALSE}
+unique(lab_raw$RESULT_ITEM_CODE)[grepl("rcort", tolower(unique(lab_raw$RESULT_ITEM_CODE)))]
+```
+
+```{r rcort_n, echo=FALSE}
+lab_raw %>% 
+  filter(!is.na(RESULT_VALUE)) %>%
+  filter(grepl("rcort", tolower(RESULT_ITEM_CODE))) %>%
+  group_by(RESULT_ITEM_CODE) %>%
+  summarise(N = n()) %>%
+  arrange(desc(N))
+```
+
+
+### "avs" {-}
+```{r avs_nm}
+unique(lab_raw$RESULT_ITEM_CODE)[grepl("avs", tolower(unique(lab_raw$RESULT_ITEM_CODE)))]
+```
+None.
+
+### "ivc" {-}
+```{r ivc_nm, echo=FALSE}
+unique(lab_raw$RESULT_ITEM_CODE)[grepl("ivc", tolower(unique(lab_raw$RESULT_ITEM_CODE)))]
+```
+
+```{r ivc}
+lab_raw_no_na %>% filter(grepl("ivc", tolower(RESULT_ITEM_CODE))) %>%
+  group_by(RESULT_ITEM_CODE) %>%
+  summarise(N = n()) %>%
+  arrange(desc(N))
+```
+
+How many EMPI_DATE?
+```{r ivc_distinct}
+lab_raw_no_na %>% filter(grepl("ivc", tolower(RESULT_ITEM_CODE))) %>%
+  # group_by(RESULT_ITEM_CODE) %>%
+  summarise(N = n_distinct(EMPI_DATE)) %>%
+  arrange(desc(N))
+```
+
+
+### "left|right" {-}
+```{r left_right_nm, echo=FALSE}
+unique(lab_raw$RESULT_ITEM_CODE)[grepl("left|right", tolower(unique(lab_raw$RESULT_ITEM_CODE)))]
+```
+
+```{r left_right}
+lab_raw_no_na %>% filter(grepl("left|right", tolower(RESULT_ITEM_CODE))) %>%
+  group_by(RESULT_ITEM_CODE) %>%
+  summarise(N = n()) %>%
+  arrange(desc(N))
+```
+How many EMPI_DATE?
+```{r left_right_distinct}
+lab_raw_no_na %>% filter(grepl("left|right", tolower(RESULT_ITEM_CODE))) %>%
+  # group_by(RESULT_ITEM_CODE) %>%
+  summarise(N = n_distinct(EMPI_DATE)) %>%
+  arrange(desc(N))
+```
+
+### "aldo" {-}
+```{r aldo}
+unique(lab_raw$RESULT_ITEM_CODE)[grepl("aldo", tolower(unique(lab_raw$RESULT_ITEM_CODE)))]
+```
+
+```{r aldo_nm}
+lab_raw_no_na %>% filter(grepl("aldo", tolower(RESULT_ITEM_CODE))) %>%
+  group_by(RESULT_ITEM_CODE) %>%
+  summarise(N = n()) %>%
+  arrange(desc(N))
+```
+
+
+
+
+### "urine" {-}
+```{r urine}
+unique(lab_raw$RESULT_ITEM_CODE)[grepl("urine", tolower(unique(lab_raw$RESULT_ITEM_CODE)))]
+```
+
+```{r urine_nm}
+lab_raw_no_na %>% filter(grepl("urine", tolower(RESULT_ITEM_CODE))) %>%
+  group_by(RESULT_ITEM_CODE) %>%
+  summarise(N = n()) %>%
+  arrange(desc(N))
+```
+### "cosyntropin" or "infusion" {-}
+```{r cosyntropin_infusion_nm}
+unique(lab_raw$RESULT_ITEM_CODE)[grepl("cosyntropin|infusion", tolower(unique(lab_raw$RESULT_ITEM_CODE)))]
+```
+None.
+
+
+
+### "kidney" {-}
+```{r kidney_nm}
+unique(lab_raw$RESULT_ITEM_CODE)[grepl("kidney", tolower(unique(lab_raw$RESULT_ITEM_CODE)))]
+```
+
+
+
+
+
+### "adenoma" {-}
+```{r adenoma_nm}
+unique(lab_raw$RESULT_ITEM_CODE)[grepl("adenoma", tolower(unique(lab_raw$RESULT_ITEM_CODE)))]
+```
+None.
+
+### "vein" {-}
+```{r vein_nm}
+unique(lab_raw$RESULT_ITEM_CODE)[grepl("vein", tolower(unique(lab_raw$RESULT_ITEM_CODE)))]
+```
+None.
+
+
+# Paired AVS Tests
+## IVC/Right/Left Aldo
+```{r aldo_pair}
+lab_raw_no_na %>% 
+  filter(RESULT_ITEM_CODE %in% c("Right Aldos", "Left Aldos", "IVC Aldosterone")) %>%
+  group_by(EMPI_DATE) %>%
+  summarise(N = n_distinct(RESULT_ITEM_CODE)) %>% ungroup() %>%
+  count(N)
+```
+```{r nonpaired_aldo, include=FALSE}
+lab_raw_no_na %>% 
+  filter(RESULT_ITEM_CODE %in% c("Right Aldos", "Left Aldos", "IVC Aldosterone")) %>%  
+  group_by(EMPI_DATE) %>%
+  filter(n_distinct(RESULT_ITEM_CODE) < 3)  %>%
+  select(EMPI_DATE, RESULT_ITEM_CODE,everything()) %>%
+  arrange(EMPI_DATE)
+```
+
+
+
+#### chart-review: AVS_lab.txt (1)
+
+
+### At PK_ENCOUNTER_ID Level? {-}
+```{r aldo_pk_enc_id, include=FALSE}
+lab_raw_no_na %>% 
+  filter(RESULT_ITEM_CODE %in% c("Right Aldos", "Left Aldos", "IVC Aldosterone")) %>%    group_by(PK_ENCOUNTER_ID) %>%
+  filter(n_distinct(RESULT_ITEM_CODE) < 3)  %>%
+  select(EMPI_DATE, RESULT_ITEM_CODE,everything()) %>%
+  arrange(PK_ENCOUNTER_ID)
+```
+This shows that at PK_ENCOUNTER_ID level, a patient could have 3 different Tests associated with 3 different PK_ENCOUNTER_ID in the same day, and the encounter dates are also same.
+
+### At EMPI_DATE Level, Duplicate Aldo tests? {-}
+```{r dup_aldo, include=FALSE}
+lab_raw_no_na %>% 
+  filter(RESULT_ITEM_CODE %in% c("Right Aldos", "Left Aldos", "IVC Aldosterone")) %>%  
+  group_by(EMPI_DATE) %>%
+  mutate(N_temp=n()) %>%
+  summarise(N=max(N_temp), N_dis = n_distinct(RESULT_ITEM_CODE)) %>% ungroup() %>%
+  filter(N != N_dis)  %>%
+  arrange(EMPI_DATE)
+```
+As we could see here, 10 EMPI_DATE's have duplicated Aldo tests.
+```{r dup_aldo_detail, include=FALSE}
+lab_raw_no_na %>% 
+  filter(RESULT_ITEM_CODE %in% c("Right Aldos", "Left Aldos", "IVC Aldosterone")) %>%  
+  group_by(EMPI_DATE) %>%
+  filter(n() > 3)  %>%
+  arrange(EMPI_DATE) %>%
+  select(EMPI_DATE, RESULT_ITEM_CODE, everything())
+```
+So the duplicates could happen for all 3 Aldo tests.
+
+## IVC/Right/Left Aldo/Cortisol
+If we remove NA result value, only 6 left:
+```{r aldo_cortisol_pair_ALL}
+lab_raw_no_na %>% 
+filter(RESULT_ITEM_CODE %in% c("Right Aldos", "Left Aldos", "IVC Aldosterone", "RCORT", "RIGHT CORTISOL", "LCORT", "LEFT CORTISOL","ICORT", "IVC CORTISOL")) %>%  
+  # mutate(RESULT_ITEM_CODE = case_when(RESULT_ITEM_CODE %in% c("RCORT", "RIGHT CORTISOL") ~ "RCORT",
+  #                                     RESULT_ITEM_CODE %in% c("LCORT", "LEFT CORTISOL") ~ "LCORT",
+  #                                     RESULT_ITEM_CODE %in% c("ICORT", "IVC CORTISOL") ~ "ICORT",
+  #                                     TRUE ~ RESULT_ITEM_CODE)) %>%
+  count(RESULT_ITEM_CODE)
+```
+
+
+
+```{r aldo_cortisol_pair}
+lab_raw_no_na %>% 
+filter(RESULT_ITEM_CODE %in% c("Right Aldos", "Left Aldos", "IVC Aldosterone", "RCORT", "RIGHT CORTISOL", "LCORT", "LEFT CORTISOL","ICORT", "IVC CORTISOL")) %>%  
+  mutate(RESULT_ITEM_CODE = case_when(RESULT_ITEM_CODE %in% c("RCORT", "RIGHT CORTISOL") ~ "RCORT",
+                                      RESULT_ITEM_CODE %in% c("LCORT", "LEFT CORTISOL") ~ "LCORT",
+                                      RESULT_ITEM_CODE %in% c("ICORT", "IVC CORTISOL") ~ "ICORT",
+                                      TRUE ~ RESULT_ITEM_CODE)) %>%
+  group_by(EMPI_DATE) %>%
+  summarise(N = n_distinct(RESULT_ITEM_CODE)) %>% ungroup() %>%
+  count(N)
+```
+Most of them have all 6 Tests.
+
+
+### For IVC/Right/Left Aldo/Cortisol, check their RESULT_RESOURCE, UNIT_OF_MEASURE, and RESULT_STATUS
+```{r result_status_aldo_cortisol}
+lab_raw_no_na %>% 
+  filter(RESULT_ITEM_CODE %in% c("Right Aldos", "Left Aldos", "IVC Aldosterone", "RCORT", "RIGHT CORTISOL", "LCORT", "LEFT CORTISOL","ICORT", "IVC CORTISOL")) %>%
+  group_by(RESULT_ITEM_CODE, RESULT_RESOURCE, UNIT_OF_MEASURE, LOINC_CODE, RESULT_STATUS) %>%
+  summarise(N=n())
+```
+The LOINC_CODE and RESULT_RESOURCE removed:
+```{r units_aldo_cortisol_no_loinc}
+lab_raw_no_na %>% 
+  filter(RESULT_ITEM_CODE %in% c("Right Aldos", "Left Aldos", "IVC Aldosterone", "RCORT", "RIGHT CORTISOL", "LCORT", "LEFT CORTISOL","ICORT", "IVC CORTISOL")) %>%
+  group_by(RESULT_ITEM_CODE, UNIT_OF_MEASURE , RESULT_STATUS) %>%
+  summarise(N=n())
+```
+Units are good. 
+```{r result_status_avs}
+lab_raw_no_na %>% 
+  filter(RESULT_ITEM_CODE %in% c("Right Aldos", "Left Aldos", "IVC Aldosterone", "RCORT", "RIGHT CORTISOL", "LCORT", "LEFT CORTISOL","ICORT", "IVC CORTISOL")) %>%
+  count(RESULT_STATUS)
+```
+There are new categories for RESULT_STATUS (with arbitrary ordering): Verified > Corrected > Old Verified > Old Corrected > Performed > Old Performed.
+
+
+# Urine Aldo [Aldo, Creatinine]
+## EPIC:
+For EPIC:
+For 24HR URINE CREATININE, there are records with unit of 'mg/dL' which is differen from others, so remove them
+For 24HR URINE CREATININE, there are records with unit of "g/day" -> change them into "mg/day": remember to change the RESULT_VALUE
+For other 3 RESULT_ITEM_CODE, there is no issue for UNITs.   
+4 RESULT_ITEM_CODE: "24HR URINE CREATININE", "CRE D ALDOS", "URINE ALDOSTERONE", "ALDOSTERONE, URINE":
+
+```{r urine_aldo, cache.lazy=FALSE}
+lab_raw_epic <- load_Lab(dat_file = "/data/raw_data/PA/RAR_v0.2.3/DINGXI_RAR_PTS_LABS.csv", lab_source = "EPIC",
+                      left_censor_date = as.Date("1997-01-01"),
+                      adjust_up = 1.5, adjust_down = 0.5, logger=logger)
+lab_raw_epic_no_na <- lab_raw_epic %>% filter(!is.na(RESULT_VALUE)) %>%  
+  mutate(EMPI_DATE = paste(EMPI, as.Date(ENC_DATE)))
+  
+```
+
+```{r epic_Aldo_Urine, eval=FALSE, include=FALSE}
+lab_raw_epic_no_na %>% 
+  group_by(PK_ENCOUNTER_ID) %>%
+  filter(any(ORDER_ITEM_CODE %in% c("C9009900", "Q19573", "83497A"))) %>% ungroup() %>%
+  arrange(PK_ENCOUNTER_ID, PK_ORDER_ID,PK_ORDER_RESULT_ID, RESULT_ITEM_CODE) %>%
+  select(EMPI, ENC_DATE, PK_ORDER_ID, ORDER_START_DATE, ORDER_NAME, RESULT_ITEM_CODE, RESULT_VALUE, RESULT_TEXT, UNIT_OF_MEASURE, RESULT_RESOURCE) %>%
+  View()
+```
+Check UNIT_OF_MEASURE, RESULT_RESOURCE, LOINC_CODE:
+```{r epic_result_item_code}
+lab_raw_epic_no_na %>% 
+  filter(RESULT_ITEM_CODE %in% c("24HR URINE CREATININE", "CRE D ALDOS", "URINE ALDOSTERONE", "ALDOSTERONE, URINE")) %>%
+  # filter(LOINC_CODE != "20624-3" | is.na(LOINC_CODE)) %>%
+  group_by(RESULT_ITEM_CODE, RESULT_RESOURCE, LOINC_CODE,UNIT_OF_MEASURE)  %>%
+  summarise(N = n())
+```
+So remove units of "mg/dL", in "24HR URINE CREATININE". Also, unify units for "24HR URINE CREATININE":
+```{r epic_result_item_Final}
+lab_raw_epic_no_na %>% 
+  filter(RESULT_ITEM_CODE %in% c("24HR URINE CREATININE", "CRE D ALDOS", "URINE ALDOSTERONE", "ALDOSTERONE, URINE")) %>%
+  filter(UNIT_OF_MEASURE != "mg/dL" | is.na(UNIT_OF_MEASURE)) %>%
+  mutate(RESULT_VALUE = ifelse(RESULT_ITEM_CODE == "24HR URINE CREATININE" & UNIT_OF_MEASURE %in% c("g/24-h", "g/24 h", "G/24HR"),
+                               RESULT_VALUE*1000, RESULT_VALUE)) %>%
+  mutate(UNIT_OF_MEASURE = case_when(RESULT_ITEM_CODE %in% c("24HR URINE CREATININE", "CRE D ALDOS") ~ "mg/day",
+                                     RESULT_ITEM_CODE %in% c("ALDOSTERONE, URINE", "URINE ALDOSTERONE") ~ "ug/day",
+                                     TRUE ~ "Unknown")) %>%
+  
+  group_by(RESULT_ITEM_CODE, UNIT_OF_MEASURE)  %>%
+  summarise(N = n())
+```
+
+```{r, include=FALSE}
+temp <- lab_raw_epic_no_na %>% 
+  filter(RESULT_ITEM_CODE %in% c("24HR URINE CREATININE", "CRE D ALDOS", "URINE ALDOSTERONE", "ALDOSTERONE, URINE")) %>%
+  filter(UNIT_OF_MEASURE != "mg/dL" | is.na(UNIT_OF_MEASURE)) %>%
+  mutate(RESULT_VALUE = ifelse(RESULT_ITEM_CODE == "24HR URINE CREATININE" & UNIT_OF_MEASURE %in% c("g/24-h", "g/24 h", "G/24HR"),
+                               RESULT_VALUE*1000, RESULT_VALUE)) %>%
+  mutate(UNIT_OF_MEASURE = case_when(RESULT_ITEM_CODE %in% c("24HR URINE CREATININE", "CRE D ALDOS") ~ "mg/day",
+                                     RESULT_ITEM_CODE %in% c("ALDOSTERONE, URINE", "URINE ALDOSTERONE") ~ "ug/day",
+                                     TRUE ~ "Unknown"))
+```
+That corresponds to: `r length(unique(temp$EMPI_DATE))` unique EMPI_DATE, `r length(unique(temp$EMPI))`
+
+## CERNER
+This is some ORDER_ITEM_CODE previously used... just take a look to start:
+```{r old_OIC}
+lab_raw_no_na %>% filter(ORDER_ITEM_CODE %in% c("C9009900", "Q19573", "83497A")) %>%
+  group_by(ORDER_ITEM_CODE, RESULT_ITEM_CODE) %>%
+  summarise(N =n()) %>% ungroup() %>% arrange(desc(N))
+```
+Nothing...
+
+```{r check_Aldo_Urine, eval=FALSE, include=FALSE}
+lab_raw_no_na %>% 
+  group_by(PK_ENCOUNTER_ID) %>%
+  filter(any(RESULT_ITEM_CODE %in% c("U Aldosterone"))) %>% ungroup() %>%
+  arrange(PK_ENCOUNTER_ID, PK_ORDER_ID,PK_ORDER_RESULT_ID, RESULT_ITEM_CODE) %>%
+  select(EMPI, ENC_DATE, PK_ORDER_ID, ORDER_START_DATE, ORDER_NAME, RESULT_ITEM_CODE, RESULT_VALUE, RESULT_TEXT, UNIT_OF_MEASURE, RESULT_RESOURCE) %>%
+  View()
+```
+
+Now select 3 labs associated with Aldosterone, Urine:
+```{r aldo_urine}
+lab_raw_no_na %>% 
+  filter(RESULT_ITEM_CODE %in% c("U Aldosterone", "Cre mg Aldos","Cre D Aldos")) %>%
+  group_by(RESULT_ITEM_CODE, RESULT_RESOURCE,UNIT_OF_MEASURE, LOINC_CODE)  %>%
+  summarise(N = n())
+```
+
+
+
+Picking 2 RESULT_ITEM_CODE: "U Aldosterone", "Cre D Aldos"
+### Impute NA UNIT_OF_MEASURE and unify UNITS {-}
+Since we focus on those 2 RESULT_ITEM_CODE, now remove the restriction for ORDER_ITEM_CODE:
+```{r reorganize_result_item_code}
+lab_raw_no_na %>% 
+  # group_by(PK_ENCOUNTER_ID) %>%
+  # filter(any(ORDER_ITEM_CODE %in% c("C9009900", "Q19573", "83497A"))) %>% ungroup() %>%
+  filter(RESULT_ITEM_CODE %in% c("U Aldosterone","Cre D Aldos")) %>%
+  # filter(LOINC_CODE != "20624-3" | is.na(LOINC_CODE)) %>%
+  group_by(RESULT_ITEM_CODE, RESULT_RESOURCE,UNIT_OF_MEASURE)  %>%
+  summarise(N = n())
+```
+
+```{r unify_units}
+lab_raw_no_na %>% 
+  filter(RESULT_ITEM_CODE %in% c("U Aldosterone","Cre D Aldos")) %>%
+  mutate(UNIT_OF_MEASURE = ifelse(RESULT_ITEM_CODE == "U Aldosterone", "ug/day", UNIT_OF_MEASURE)) %>% 
+  group_by(RESULT_ITEM_CODE, RESULT_RESOURCE,UNIT_OF_MEASURE)  %>%
+  summarise(N = n())
+```
+
+Take a look at their RESULT_STATUS:
+```{r result_status}
+lab_raw_no_na %>% 
+  filter(RESULT_ITEM_CODE %in% c("U Aldosterone","Cre D Aldos")) %>%
+  mutate(UNIT_OF_MEASURE = ifelse(RESULT_ITEM_CODE == "U Aldosterone", "ug/day", UNIT_OF_MEASURE)) %>% 
+  group_by(RESULT_ITEM_CODE, RESULT_RESOURCE,UNIT_OF_MEASURE, RESULT_STATUS)  %>%
+  summarise(N = n())
+```
+There are two RESULT_STATUS: Corrected, Verified:
+```{r echo=FALSE, eval=FALSE}
+lab_raw_no_na %>% 
+  filter(RESULT_ITEM_CODE %in% c("U Aldosterone","Cre D Aldos")) %>%
+  mutate(UNIT_OF_MEASURE = ifelse(RESULT_ITEM_CODE == "U Aldosterone", "ug/day", UNIT_OF_MEASURE)) %>% 
+  group_by(EMPI_DATE) %>%
+  filter(n_distinct(RESULT_STATUS) > 1) %>% ungroup() %>%
+  arrange(EMPI_DATE,RESULT_ITEM_CODE, RESULT_RESOURCE,UNIT_OF_MEASURE, RESULT_STATUS)  %>%
+  View()
+```
+This returns nothing, which means for one EMPI_DATE, there is only one RESULT_STATUS.

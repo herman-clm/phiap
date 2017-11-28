@@ -28,27 +28,34 @@ setwd(working_dir)
 
 # load functions
 source("common_anal/R_fxns.R")
-source("common_anal/RAR_fxns.R")
+source("common_anal/RAR_fxns.R", chdir = TRUE)
 
 #########################
 ##       Parameters    ##
 #########################
 
-dat_version <- "v0.2.2"
-
-## specify left-censoring date
-left_censor_date <- as.Date("1997-01-01")
-
-## specify files
-enc_file <- "/data/raw_data/PA/RAR_v4/HERMANDA_RAR_PTS_ENC.csv"
-dx_file <- "/data/raw_data/PA/RAR_v4/HERMANDA_RAR_pts_dx.csv"
-demo_file <- "/data/raw_data/PA/RAR_v4/HERMANDA_RAR_pts_demo.csv"
-lab_file <- "/data/raw_data/PA/RAR_v4/HERMANDA_RAR_pts_labs.csv"
-empi_mrn_file <- "/data/raw_data/PA/RAR_v4/HERMANDA_RAR_EMPI_MRN.csv"
-
+# Manually Specification for config
+dat_version <- "v0.2.3"
 ## Dx Codes
 CODE_Level <- "Dx_h0"
 hierarchy_dx <- c("Hyperaldo", "HTN", "Diabetes", "Sleep_Apnea")
+
+
+# read in config file
+## specify left-censoring date
+left_censor_date <- as.Date(config$RAR$left_censor_date_chr)
+
+## specify files
+
+enc_file <- config[[dat_version]]$enc_file
+dx_file <- config[[dat_version]]$dx_file
+demo_file <- config[[dat_version]]$demo_file
+lab_file_epic <- config[[dat_version]]$lab_file_epic
+lab_file_cerner <- config[[dat_version]]$lab_file_cerner
+empi_mrn_file <- config[[dat_version]]$empi_mrn_file
+
+icd_map_file <- config[[dat_version]]$icd_map_file
+
 
 
 
@@ -93,7 +100,7 @@ logger$info("Biostat Data Cleaning Starts here: version: %s. Date: %s",
 
 
 
-## HERMANDA_RAR_PTS_ENC.csv
+## Enc's
 
 rar_enc <- load_RAR_enc(dat_file = enc_file, 
                         bp_only = FALSE, EMPI_DATE_Level = TRUE, outpatient_only = TRUE, logger = logger)
@@ -102,9 +109,10 @@ rar_enc <- load_RAR_enc(dat_file = enc_file,
 
 
 
-## HERMANDA_RAR_PTS_DX.csv
+## Dx's
 dx_all <- load_RAR_Dx(dat_file = dx_file, logger = logger)
-dx_all <- sub_RAR_dx(dat=dx_all, CODE_Level = CODE_Level, 
+dx_all <- sub_RAR_dx(dat=dx_all, icd_map_file = icd_map_file,
+                     CODE_Level = CODE_Level, 
                      hierarchy_dx = hierarchy_dx, 
                      EMPI_DATE_Level = TRUE, left_censor_date = left_censor_date,
                     outpatient_only = TRUE, logger=logger)
@@ -113,32 +121,25 @@ dx_all <- sub_RAR_dx(dat=dx_all, CODE_Level = CODE_Level,
 # save(rar_enc, rar_dx, file = "bios_data.RData")
 
 
-## HERMANDA_RAR_PTS_DEMO.csv
+## Patient Demo
 rar_demo <- load_RAR_PtDemo(dat_file = demo_file, logger = logger)
 
 # save(rar_enc, rar_dx, rar_demo, file = "PA_analysis/Biostat_process/bios_data.RData")
 
 
-## HERMANDA_RAR_PTS_LABS.csv
-lab_raw <- load_Lab(dat_file = lab_file, lab_source = "ALL",
-                    left_censor_date = left_censor_date,
-                    adjust_up = 1.5, adjust_down = 0.5, logger=logger)
+## Labs from EPIC and CERNER
+## lab_all <- get_RAR_lab_EPIC_CERNER(lab_file_epic = lab_file_epic, lab_file_cerner = lab_file_cerner, logger = logger)
 
 
-lab_PK_ORDER_ID_RIC <- clean_Lab(dat = lab_raw, RAR_only = FALSE, potassium_in = TRUE,
-                     num_labs=44, logger=logger)
+lab_all <- get_RAR_lab_EPIC_CERNER(lab_file_epic = lab_file_epic, lab_file_cerner = lab_file_cerner,
+                                   left_censor_date = left_censor_date, logger=logger)
 
-lab_all <- collapse_lab_EMPI_DATE(lab_PK_ORDER_ID_RIC, logger=logger)
 
 
 
 save(dx_all, lab_all, rar_demo, rar_enc, file = paste("PA_analysis/Biostat_process/bios_data_",
                                                       dat_version,".RData", sep=""))
 
-## HERMANDA_RARV3.csv
-# rar <- load_Lab(dat_file = "/data/raw_data/PA/HERMANDA_RARV3.csv", lab_source = "RAR",
-#                 potassium = FALSE, adjust_up = 1.5, adjust_down = 0.5)
-## TODO: Use this file to extract RAR Labs
 
 
 
@@ -213,7 +214,9 @@ save(rar_mg, pts, file = paste("PA_analysis/Biostat_process/bios_data_enc_pts_",
 
 
 
-
+####################
+###   Deidentify  ##
+####################
 ## De-identify RAR- ENC Level
 
 enc_level <- deidentify(dat = rar_mg, primary_key = "EMPI_DATE", pt_id = "EMPI", mode = "create", 

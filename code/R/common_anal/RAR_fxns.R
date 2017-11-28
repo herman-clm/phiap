@@ -3,8 +3,9 @@ suppressMessages(library(data.table))
 suppressMessages(library(lubridate))
 suppressMessages(library(tidyr))
 
-script.dir <- dirname(sys.frame(1)$ofile)
-source(paste(script.dir, "R_fxns.R", sep="/"))
+# script.dir <- dirname(sys.frame(1)$ofile)
+# source(paste(script.dir, "R_fxns.R", sep="/"))
+source("R_fxns.R")
 
 load_RAR <- function() {
   #' Load in the renin aldosterone, and other laboratory data
@@ -406,7 +407,8 @@ load_RAR_enc <- function(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_ENC.csv"
                   ENCOUNTER_SUB_TYPE = 'character', 
                   ROLE_ADMIT = 'character', DISCIPLINE_ADMIT = 'character', ENC_TYPE_CODE = 'character', 
                   ENC_TYPE_MASTER_CODE = 'character', ENC_TYPE_MASTER_DESCRIPTION = 'character', 
-                  MASTER_LOCATION_CODE = 'character', MASTER_LOCATION_DESCRIPTION = 'character', 
+                  MASTER_LOCATION_CODE = 'character', MASTER_LOCATION_DESCRIPTION = 'character',
+                  MASTER_LOCATION_ZIP = 'character',
                   MASTER_LOCATION_FACILITY_YN = 'character', MASTER_LOCATION_CLINIC_YN = 'character',
                   MASTER_LOCATION_ENTITY = 'character', SERVICE_MASTER_CODE = 'character', 
                   SERVICE_MASTER_DESCRIPTION = 'character', 
@@ -559,12 +561,14 @@ load_RAR_Dx <- function(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_DX.csv", 
   
 }
 
-sub_RAR_dx <- function(dat, CODE_Level, hierarchy_dx,
+sub_RAR_dx <- function(dat, 
+                       icd_map_file, CODE_Level, hierarchy_dx,
                        EMPI_DATE_Level = TRUE, outpatient_only = TRUE,
                        left_censor_date = as.Date("1997-01-01"),
                        logger = NULL){
   #' Getting a subset for Dx data, in a wide data set
   #' @param dat tibble Pre-processed RAR Dx data
+  #' @param icd_map_file character ICD mapping file
   #' @param CODE_Level character Specify on which level to select the Dx codes: "ICD", "Dx_h0", "Dx_h1", or "Dx_h2"
   #' @param hierachy_dx vector A character vector that specifies Dx in corresponding hierarchy level
   #' @param EMPI_DATE_Level logit If TRUE, collapse data into EMPI_DATE Level. Default is TRUE
@@ -600,7 +604,7 @@ sub_RAR_dx <- function(dat, CODE_Level, hierarchy_dx,
   # filter based on Selected Dx's
   # CODE_Level = "Dx_h1"
   # hierarchy_dx <- c("Essential_HTN", "Primary_aldosteronism")
-  icd_map <- icd_mapping(dx_hierarchy_level = CODE_Level, dx_hierarchy_level_value = hierarchy_dx)
+  icd_map <- icd_mapping(icd_map_file = icd_map_file, dx_hierarchy_level = CODE_Level, dx_hierarchy_level_value = hierarchy_dx)
   
   
   
@@ -742,7 +746,7 @@ load_RAR_PtDemo <- function(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_DEMO.
   ## specify Column Classes
   colClasses <- c(BIRTH_DATE = "PDS_DateTime", 
                   EMPI = 'character', PK_PATIENT_ID = 'character', GENDER_MASTER_CODE = 'character', 
-                  RACE_MASTER_CODE = 'character', RACE_MASTER_HISPANIC_YN = 'character')
+                  RACE_MASTER_CODE = 'character', RACE_MASTER_HISPANIC_YN = 'character', ZIP='character')
   
   rar_demo <- fread_epic(dat_file = dat_file, colClasses = colClasses, logger = logger)
   
@@ -775,10 +779,10 @@ load_RAR_PtDemo <- function(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_DEMO.
 
 load_Lab <- function(dat_file,  lab_source, adjust_up = 1.5, adjust_down = 0.5, 
                      left_censor_date = as.Date("1997-01-01"), allow_missing_columns=FALSE,
-                     logger = NULL){
+                     logger = NULL, ...){
   #' Load in the Lab data, and do some basic cleaning. Lab data includes RAR_Lab and RAR_V3
   #' @param dat_file string Raw data text file location 
-  #' @param lab_source character Lab test source: ALL or RAR
+  #' @param lab_source character Lab test source: EPIC, CERNER or RAR
   #' @param adjust_up numeric Rate for adjusting "> X", default is 0.5
   #' @param adjust_donw numeric Rate for adjusting "< X", default is 1.5
   #' @param left_censor_date POSIXct Left-censoring date
@@ -789,7 +793,7 @@ load_Lab <- function(dat_file,  lab_source, adjust_up = 1.5, adjust_down = 0.5,
   
   
   # read in the files with specified column classes
-  if(lab_source == "ALL"){
+  if(lab_source == "EPIC"){
     # specify Column Classes
     colClasses <- c(ENC_DATE = "PDS_DateTime", ORDER_START_DATE = "PDS_DateTime", O_SOURCE_LAST_UPDATE = "PDS_DateTime", 
                     RESULT_DATE = "PDS_DateTime", 
@@ -799,6 +803,16 @@ load_Lab <- function(dat_file,  lab_source, adjust_up = 1.5, adjust_down = 0.5,
                     ORDERING_PROV = 'character', HAR_NUMBER = 'character', 
                     ORDER_GROUP = 'character', RESULT_TEXT = 'character', RESULT_RESOURCE = "character", 
                     ORES_SOURCE_LAST_UPDATE = "PDS_DateTime", LOINC_CODE = 'character')
+  }else if(lab_source == "CERNER"){
+    colClasses <-  c(ENC_DATE = "PDS_DateTime", ORDER_START_DATE = "PDS_DateTime", O_SOURCE_LAST_UPDATE = "PDS_DateTime", 
+                    RESULT_DATE = "PDS_DateTime", 
+                    EMPI = 'character', PK_ENCOUNTER_ID = 'character', PK_ORDER_ID = 'character', ORDER_NAME = 'character', 
+                    ORDER_ITEM_CODE = 'character', PK_ORDER_RESULT_ID = 'character', RESULT_VALUE = 'character',
+                    UNIT_OF_MEASURE = 'character', RESULT_STATUS = 'character', RESULT_ITEM_CODE = 'character', 
+                    HAR_NUMBER = 'character', 
+                    ORDER_GROUP = 'character', RESULT_TEXT = 'character', RESULT_RESOURCE = "character", 
+                    ORES_SOURCE_LAST_UPDATE = "PDS_DateTime", LOINC_CODE = 'character')
+    
   }else if(lab_source == "RAR"){
     colClasses <- c(ENC_DATE = "PDS_DateTime", ORDER_START_DATE = "PDS_DateTime",
                     RESULT_DATE = "PDS_DateTime", ORDER_DATE = "PDS_DateTime", PERFORMED_DATE = "PDS_DateTime", 
@@ -831,7 +845,8 @@ load_Lab <- function(dat_file,  lab_source, adjust_up = 1.5, adjust_down = 0.5,
   rar_lab <- fread_epic(dat_file = dat_file, colClasses = colClasses, logger = logger)
 
   
-  msg <- sprintf("load_Lab: Read raw Lab data. %d EMPI's, in %d total rows.", length(unique(rar_lab$EMPI)), nrow(rar_lab))
+  msg <- sprintf("load_Lab: Read raw Lab data from [%s] %d EMPI's, in %d total rows.", 
+                 lab_source,length(unique(rar_lab$EMPI)), nrow(rar_lab))
   if(!is.null(logger)) logger$info(msg)
   
   # modify RESULT_VALUE, using numericize function
@@ -841,15 +856,15 @@ load_Lab <- function(dat_file,  lab_source, adjust_up = 1.5, adjust_down = 0.5,
   # left censor data
   if(!is.null(left_censor_date)){
     rar_lab %<>% filter(ENC_DATE >= left_censor_date)
-    msg <- sprintf("load_Lab: Encounter data were left censored at %s. %d EMPI's, in %d total rows.", 
-                   left_censor_date, length(unique(rar_lab$EMPI)), nrow(rar_lab))
+    msg <- sprintf("load_Lab: [%s] Encounter data were left censored at %s. %d EMPI's, in %d total rows.", 
+                   lab_source, left_censor_date, length(unique(rar_lab$EMPI)), nrow(rar_lab))
     if(!is.null(logger)) logger$info(msg)
   }
   
   
   
-  msg <- sprintf("load_Lab: Return ALL Lab data. %d EMPI's, in %d total rows.", 
-                 length(unique(rar_lab$EMPI)), nrow(rar_lab))
+  msg <- sprintf("load_Lab: Return ALL Lab data from [%s]. %d EMPI's, in %d total rows.", 
+                 lab_source, length(unique(rar_lab$EMPI)), nrow(rar_lab))
   if(!is.null(logger)) logger$info(msg)
   
   return(rar_lab)
@@ -857,37 +872,35 @@ load_Lab <- function(dat_file,  lab_source, adjust_up = 1.5, adjust_down = 0.5,
 }
 
 
-
-
-clean_Lab <- function(dat, RAR_only = TRUE, potassium_in = TRUE, num_labs = 0, logger = NULL){
-  #' Load in the Lab data, and do some basic cleaning
+select_RAR_lab <- function(dat, lab_source, 
+                           RAR_only = TRUE, #EPIC
+                           potassium_in = TRUE,  #EPIC
+                           num_labs = 0,  #EPIC
+                           logger = NULL, ...){
+  #' This function is used to select labs, instead of using all labs. The returned data set is not collapsed.
   #' @param dat tibble Pre-cleaned RAR data 
-  #' This should only contain: "Corrected", "Final", "Incomplete", "Preliminary", "", "ALL"
+  #' @param lab_source character Lab source: "EPIC" or "CERNER" 
+  #' NOTE: Currently, only [AVS] tests were drawn from CERNER. RAR, potassium [U Aldo] and all other tests were from EPIC.
+  #' NOTE: When lab_source is "CERNER", all other EPIC-related options would be no longer in use (since we don't need them in CERNER for now)
   #' @param RAR_only logit If TRUE, will only return Aldo/Renin results
   #' @param potassium_in logit If TRUE, potassium lab results will be included. Default is TRUE
-  #' Note: RESULT_ITEM_CODE may have several CODEs that include "POTASSIUM", but only "POTASSIUM"
+  #' Note: RESULT_ITEM_CODE may have several CODEs that include "POTASSIUM", but only "POTASSIUM" (exact matching) would be selected now
   #' @param num_labs numeric Number of labs results included. Note that RAR and potassium labs are not counted in num_labs
   #' @return ret tibble pre-processed RAR Dx data
 
  
   dat %<>% filter(!is.na(dat$PK_ORDER_RESULT_ID))
   
-  msg <- sprintf("clean_Lab: Records with missing PK_ORDER_RESULT_ID were removed. %d EMPI's, %d total rows.", 
-                 length(unique(dat$EMPI)), nrow(dat))
+  msg <- sprintf("lab_select: [%s] Records with missing PK_ORDER_RESULT_ID were removed. %d EMPI's, %d total rows.", 
+                 lab_source, length(unique(dat$EMPI)), nrow(dat))
   if(!is.null(logger)) logger$info(msg)
   
-  # Duplicates
-  if(sum(duplicated(dat))){
-    if(!is.null(logger)) logger$warn("clean_Lab: Duplicated rows in Lab's are present")
-    dat %<>%
-      filter(!duplicated(dat))
-  }
-  
+
   # Create new ENC ID: EMPI_DATE
   dat$EMPI_DATE <- paste(dat$EMPI, format(dat$ENC_DATE, "%Y-%m-%d"))
   
-  msg <- sprintf("clean_Lab: All Labs: %d EMPI's, %d EMPI_Date's, %d total rows.", 
-                 length(unique(dat$EMPI)), length(unique(dat$EMPI_DATE)), nrow(dat))
+  msg <- sprintf("lab_select: [%s] All Labs: %d EMPI's, %d EMPI_Date's, %d total rows.", 
+                 lab_source, length(unique(dat$EMPI)), length(unique(dat$EMPI_DATE)), nrow(dat))
   if(!is.null(logger)) logger$info(msg)
   
   
@@ -895,157 +908,237 @@ clean_Lab <- function(dat, RAR_only = TRUE, potassium_in = TRUE, num_labs = 0, l
   # Create ret table
   ret <- as.tibble()
   
-  # RAR
-  ## catch "ALDO"|"RENIN"
-  dat_rar <- dat %>% filter(grepl("renin|aldo", tolower(RESULT_ITEM_CODE))) %>%
-    group_by(ORDER_ITEM_CODE, RESULT_ITEM_CODE)
-  
-  ## Exclude ORDER_ITEM_CODE that are for AVS or urine specimens
-  dat_rar %<>% filter(!(ORDER_ITEM_CODE %in%  c("C9009900", "C9009995", "C9009997", "Q19573", "83497A")))
-  
-  
-  ## dropped many rows here
-  ret <- dat_rar %>% 
-    filter(RESULT_ITEM_CODE %in% c("RENIN ACTIVITY","RENIN", "PLASMA RENIN ACTIVITY, LC/MS/MS", "PLASMA RENIN ACTIVITY")) %>%
-    mutate(Test = "PRA") %>%
-    bind_rows(., ret)
-  
-  
-  ret <- dat_rar %>% 
-    filter(RESULT_ITEM_CODE %in% c("DIRECT RENIN")) %>% 
-    mutate(Test = "DRC") %>%
-    bind_rows(., ret)
-  
-  ret <- dat_rar %>% 
-    filter(RESULT_ITEM_CODE %in% c("ALDOSTERONE, SERUM", "ALDOSTERONE, LC/MS/MS", "ALDOSTERONE")) %>%
-    mutate(Test = "Aldo") %>%
-    bind_rows(., ret) %>% ungroup()
-  
-
-  msg <- sprintf("clean_Lab: RAR Labs: %d EMPI's, %d EMPI_Date's, %d total rows.", 
-                 length(unique(ret$EMPI)), length(unique(ret$EMPI_DATE)), nrow(ret))
-  if(!is.null(logger)) logger$info(msg)
   
   
   
   
-  if(RAR_only){
-    # The picking function applied here
-    ret <- collapse_lab_PK_ORDER_ID_RIC(ret)
-    
-    ret %<>% ungroup()
+  if(lab_source == "CERNER"){
+    # select Labs from CERNER
+    # Note that to avoid `SAMPLE` fom RESULT_ITEM_CODE, only records with non-NA RESULT_VALUE were kept
+    dat %<>% filter(!is.na(dat$RESULT_VALUE))
     
     
-    msg <- sprintf("clean_Lab: ONLY RAR Labs are returnd as Lab data: %d EMPI's, %d EMPI_Date's, %d total rows.", 
+    ## AVS
+    ### some Left Cortisols [C LCORT, LCORT] were all renamed to LEFT CORTISOL
+    if(sum(dat$RESULT_ITEM_CODE %in% c("RIGHT CORTISOL", "LEFT CORTISOL", "IVC CORTISOL")) & !is.null(logger)){
+      logger$info("lab_select: CERNER AVS lab of 'RIGHT CORTISOL', 'LEFT CORTISOL', 'IVC CORTISOL' were renamed.")
+    }
+    
+    
+    avs_lab <- dat %>% 
+      filter(RESULT_ITEM_CODE %in% c("Right Aldos", "Left Aldos", "IVC Aldosterone", "RCORT", "RIGHT CORTISOL", "LCORT", "LEFT CORTISOL","ICORT", "IVC CORTISOL")) %>%  
+      ## NOTE: after removing NA from result value, this mutate does nothing, since RIGHT/LEFT/IVC CORTISOL were removed in current CERNER data
+      mutate(RESULT_ITEM_CODE = case_when(RESULT_ITEM_CODE %in% c("RCORT", "RIGHT CORTISOL") ~ "RCORT",
+                                           RESULT_ITEM_CODE %in% c("LCORT", "LEFT CORTISOL") ~ "LCORT",
+                                           RESULT_ITEM_CODE %in% c("ICORT", "IVC CORTISOL") ~ "ICORT",
+                                          TRUE ~ RESULT_ITEM_CODE)) %>%
+      mutate(Test = RESULT_ITEM_CODE) %>%
+      ## NOTE: units were checked in AVS_lab.Rmd so that we could simply impute NA's, but for later version, it's not guaranteed
+      mutate(UNIT_OF_MEASURE = case_when(RESULT_ITEM_CODE %in% c("IVC Aldosterone", "Right Aldos", "Left Aldos") ~ "ng/dL",
+                                         TRUE ~ "ug/dL"))
+      
+    
+    
+    ret %<>% bind_rows(., avs_lab)
+    
+    # ## Aldosterone, Urine
+    # ualdo <- dat %>% 
+    #   filter(RESULT_ITEM_CODE %in% c("U Aldosterone","Cre D Aldos")) %>%
+    #   mutate(UNIT_OF_MEASURE = ifelse(RESULT_ITEM_CODE == "U Aldosterone", "ug/day", UNIT_OF_MEASURE)) %>% 
+    #   mutate(Test = RESULT_ITEM_CODE)
+    # 
+    # ret %<>% bind_rows(., ualdo)
+    
+    
+    # remove duplicates, if any
+    if(sum(duplicated(ret))){
+      if(!is.null(logger)) logger$warn("lab_select: [PDS_CERNER] Duplicated rows in Lab's are present")
+      ret %<>% filter(!duplicated(ret))
+    }
+   
+    
+    
+  }else if(lab_source == "EPIC"){
+    
+    # select Labs from EPIC
+    ## Explicitly exclude RESULT_ITEM_CODE's that are imported from CERNER
+    ##### this is AVS, Aldo U in EPIC
+    dat %<>% filter(!(
+                      # RESULT_ITEM_CODE %in% c("CRE D ALDOS", "24HR URINE CREATININE","ALDOSTERONE, URINE", "URINE ALDOSTERONE") | 
+                      grepl("^ivc aldosterone|^right aldosterone|^left aldosterone|^ivc cortisol|^right cortisol|^left cortisol|^c lcort|^lcort", 
+                            tolower(RESULT_ITEM_CODE))
+                      )
+                    ) 
+    
+    
+    ##### this is AVS, Aldo U in CERNER
+    dat %<>% filter(!(RESULT_ITEM_CODE %in% c("Right Aldos", "Left Aldos", "IVC Aldosterone", 
+                                              "RCORT", "RIGHT CORTISOL", "LCORT", "LEFT CORTISOL",
+                                              "ICORT", "IVC CORTISOL",
+                                              "U Aldosterone","Cre D Aldos"))) 
+    
+    
+    
+    
+    
+    # Duplicates
+    if(sum(duplicated(dat))){
+      if(!is.null(logger)) logger$warn("lab_select: [PDS_EPIC] Duplicated rows in Lab's are present")
+      dat %<>%
+        filter(!duplicated(dat))
+    }
+    
+    
+    # RAR
+    ## catch "ALDO"|"RENIN"
+    dat_rar <- dat %>% filter(grepl("renin|aldo", tolower(RESULT_ITEM_CODE))) %>%
+      group_by(ORDER_ITEM_CODE, RESULT_ITEM_CODE)
+    
+    ## Exclude ORDER_ITEM_CODE that are for AVS or urine specimens
+    dat_rar %<>% filter(!(ORDER_ITEM_CODE %in%  c("C9009900", "C9009995", "C9009997", "Q19573", "83497A")))
+    
+    
+    ## dropped many rows here
+    ret <- dat_rar %>% 
+      filter(RESULT_ITEM_CODE %in% c("RENIN ACTIVITY","RENIN", "PLASMA RENIN ACTIVITY, LC/MS/MS", "PLASMA RENIN ACTIVITY")) %>%
+      mutate(Test = "PRA") %>%
+      bind_rows(., ret)
+    
+    
+    ret <- dat_rar %>% 
+      filter(RESULT_ITEM_CODE %in% c("DIRECT RENIN")) %>% 
+      mutate(Test = "DRC") %>%
+      bind_rows(., ret)
+    
+    ret <- dat_rar %>% 
+      filter(RESULT_ITEM_CODE %in% c("ALDOSTERONE, SERUM", "ALDOSTERONE, LC/MS/MS", "ALDOSTERONE")) %>%
+      mutate(Test = "Aldo") %>%
+      bind_rows(., ret) %>% ungroup()
+    
+    
+    msg <- sprintf("lab_select: RAR Labs: %d EMPI's, %d EMPI_Date's, %d total rows.", 
                    length(unique(ret$EMPI)), length(unique(ret$EMPI_DATE)), nrow(ret))
     if(!is.null(logger)) logger$info(msg)
     
     
-    return(ret)
+    
+    if(RAR_only){
+      # The picking function applied here
+      ret <- collapse_lab_PK_ORDER_ID_RIC(ret)
+      
+      ret %<>% ungroup()
+      
+      
+      msg <- sprintf("lab_select: [%s] ONLY RAR Labs are returnd as Lab data: %d EMPI's, %d EMPI_Date's, %d total rows.", 
+                     lab_source, length(unique(ret$EMPI)), length(unique(ret$EMPI_DATE)), nrow(ret))
+      if(!is.null(logger)) logger$info(msg)
+      
+      
+      return(ret)
+    }
+    
+    
+    # U Aldo
+    ualdo <- dat %>% 
+      filter(RESULT_ITEM_CODE %in% c("24HR URINE CREATININE", "CRE D ALDOS", "URINE ALDOSTERONE", "ALDOSTERONE, URINE")) %>%
+      filter(UNIT_OF_MEASURE != "mg/dL" | is.na(UNIT_OF_MEASURE)) %>%
+      mutate(RESULT_VALUE = ifelse(RESULT_ITEM_CODE == "24HR URINE CREATININE" & UNIT_OF_MEASURE %in% c("g/24-h", "g/24 h", "G/24HR"),
+                                   RESULT_VALUE*1000, RESULT_VALUE)) %>%
+      mutate(UNIT_OF_MEASURE = case_when(RESULT_ITEM_CODE %in% c("24HR URINE CREATININE", "CRE D ALDOS") ~ "mg/day",
+                                         RESULT_ITEM_CODE %in% c("ALDOSTERONE, URINE", "URINE ALDOSTERONE") ~ "ug/day",
+                                         TRUE ~ "Unknown")) %>%
+      ## NOTE: merge 4 to 2 tests
+      mutate(RESULT_ITEM_CODE = case_when(RESULT_ITEM_CODE %in% c("24HR URINE CREATININE", "CRE D ALDOS") ~ "24HR URINE CREATININE",
+                                         RESULT_ITEM_CODE %in% c("ALDOSTERONE, URINE", "URINE ALDOSTERONE") ~ "URINE ALDOSTERONE",
+                                         TRUE ~ "Unknown")) %>%
+      mutate(Test = RESULT_ITEM_CODE)
+    
+    ret <- ualdo %>% bind_rows(., ret)
+
+    
+    # Include POTASSIUM
+    if(potassium_in){
+      # list of labs to include?
+      ret <- dat  %>% filter(RESULT_ITEM_CODE == "POTASSIUM") %>% 
+        mutate(Test = "POTASSIUM") %>%
+        bind_rows(., ret)
+      
+      msg <- sprintf("lab_select: [%s] Potassium Labs included: %d unique tests, %d EMPI's, %d EMPI_Date's, %d total rows.", 
+                     lab_source, length(unique(ret$Test)),length(unique(ret$EMPI)), length(unique(ret$EMPI_DATE)), nrow(ret))
+      if(!is.null(logger)) logger$info(msg)
+      
+      
+    }
+    
+    
+    if(num_labs != 0){
+      # Get a list for RESULT_ITEM_CODE, excluding POTASSIUM and RAR
+      ric_ranked_lt <- dat %>% group_by(RESULT_ITEM_CODE) %>%
+        summarise(N = n()) %>%
+        arrange(desc(N)) %>%
+        na.omit(.) %>%
+        filter(!(RESULT_ITEM_CODE %in% c("POTASSIUM") | RESULT_ITEM_CODE %in% dat_rar$RESULT_ITEM_CODE))
+      
+      # num_labs = 44 for CBC (Complete Blood Count) & CMP (Comprehensive Metabolic Panel)
+      ric_lt <- ric_ranked_lt[1:num_labs,]
+      
+      
+      # explicitly exclude U Aldo labs here
+      ric_lt %<>% filter(!(RESULT_ITEM_CODE %in% c("24HR URINE CREATININE", "CRE D ALDOS", "URINE ALDOSTERONE", "ALDOSTERONE, URINE")))
+      
+      ret <- dat %>% filter(RESULT_ITEM_CODE %in% ric_lt$RESULT_ITEM_CODE) %>%
+        mutate(Test = RESULT_ITEM_CODE) %>%
+        bind_rows(., ret)
+      
+      
+      msg <- sprintf("lab_select: [%s] %s Labs included: %d unique tests, %d EMPI's, %d EMPI_Date's, %d total rows.", 
+                     lab_source, num_labs, length(unique(ret$Test)),length(unique(ret$EMPI)), length(unique(ret$EMPI_DATE)), nrow(ret))
+      if(!is.null(logger)) logger$info(msg)
+      
+      
+    }
+    
+    
+    ret %<>% ungroup()
+    
+  }else{
+    # lab_source is neither EPIC nor CERNER
+    
+    msg <- sprintf("lab_select: [%s] unrecognized lab_source [%s]", 
+                   lab_source, lab_source)
+    if(!is.null(logger)) logger$error(err_msg)
+    stop(err_msg)
+    
   }
   
   
   
-  # Include POTASSIUM
-  if(potassium_in){
-    ret <- dat  %>% filter(RESULT_ITEM_CODE == "POTASSIUM") %>% 
-      mutate(Test = "POTASSIUM") %>%
-      bind_rows(., ret)
-    
-    msg <- sprintf("clean_Lab: Potassium Labs included: %d unique tests, %d EMPI's, %d EMPI_Date's, %d total rows.", 
-                   length(unique(ret$Test)),length(unique(ret$EMPI)), length(unique(ret$EMPI_DATE)), nrow(ret))
-    if(!is.null(logger)) logger$info(msg)
-    
-    
-  }
   
-  
-  if(num_labs != 0){
-    # Get a list for RESULT_ITEM_CODE, excluding POTASSIUM and RAR
-    ric_ranked_lt <- dat %>% group_by(RESULT_ITEM_CODE) %>%
-      summarise(N = n()) %>%
-      arrange(desc(N)) %>%
-      na.omit(.) %>%
-      filter(!(RESULT_ITEM_CODE %in% c("POTASSIUM") | RESULT_ITEM_CODE %in% dat_rar$RESULT_ITEM_CODE))
-    
-    # num_labs = 44 for CBC (Complete Blood Count) & CMP (Comprehensive Metabolic Panel)
-    ric_lt <- ric_ranked_lt[1:num_labs,]
-    
-    ret <- dat %>% filter(RESULT_ITEM_CODE %in% ric_lt$RESULT_ITEM_CODE) %>%
-      mutate(Test = RESULT_ITEM_CODE) %>%
-      bind_rows(., ret)
-    
-    
-    msg <- sprintf("clean_Lab: %s Labs included: %d unique tests, %d EMPI's, %d EMPI_Date's, %d total rows.", 
-                   num_labs, length(unique(ret$Test)),length(unique(ret$EMPI)), length(unique(ret$EMPI_DATE)), nrow(ret))
-    if(!is.null(logger)) logger$info(msg)
-    
-    
-  }
-  
-  
-  ret %<>% ungroup()
-  
-  ret <- collapse_lab_PK_ORDER_ID_RIC(ret)
-  
-  msg <- sprintf("clean_Lab: Returned Lab data in PK_ORDER_ID+RESULT_ITEM_CODE level: %d unique tests, %d EMPI's, %d EMPI_Date's, %d total rows.", 
-                 length(unique(ret$Test)),length(unique(ret$EMPI)), length(unique(ret$EMPI_DATE)), nrow(ret))
+  msg <- sprintf("lab_select: [%s]. Returned Lab data: %d unique tests, %d EMPI's, %d EMPI_Date's, %d total rows.", 
+                 lab_source, length(unique(ret$Test)),length(unique(ret$EMPI)), length(unique(ret$EMPI_DATE)), nrow(ret))
   if(!is.null(logger)) logger$info(msg)
   
   
-
+  
+  # add lab source
+  ret$lab_source <- lab_source
+  
   return(ret)
 }
 
 
-
-
-
-collapse_lab_PK_ORDER_ID_RIC <- function(dat){
-  #' This function is used to collapse raw lab function into PK_ORDER_ID + RESULT_ITEM_CODE level
-  #' which means for PK_ORDER_ID + RESULT_ITEM_CODE is the unique ID here
-  #' This function will pick according to RESULT_STATUS: Corrected > Final > Preliminary > Incomplete > NA
-  #' @param dat tibble Raw lab data frame
-  #' @return ret tibble Returned collapsed Lab data
-  
-  
-  # apply picking function: from all lab into PK_ORDER_ID + RESULT_ITEM_CODE level
-  dat$oid_ric <- paste(dat$PK_ORDER_ID, dat$RESULT_ITEM_CODE, sep = "_")
-  
-  # factor RESULT_STATUS and assign levels
-  dat$RESULT_STATUS <- factor(dat$RESULT_STATUS, levels = c("Corrected", "Final", "Preliminary", "Incomplete", NA))
-  
-  # a list of PK_ORDER_ID + RESULT_ITEM_CODE which has multiple records
-  dups <- dat[which(duplicated(dat$oid_ric)), "oid_ric"]
-  
-  # separate dat into two parts
-  r0 <- subset(dat, !(oid_ric %in% dups$oid_ric))
-  r1 <- subset(dat, oid_ric %in% dups$oid_ric)
-  
-  # deal with those oid_ric which has multiple records
-  r1 %<>%
-    group_by(oid_ric, RESULT_STATUS) %>%
-    mutate_at(vars(RESULT_VALUE), funs(median(., na.rm = TRUE))) %>%
-    ungroup() %>%
-    group_by(oid_ric) %>%
-    arrange(RESULT_STATUS) %>%
-    slice(1)
-  
-  # returning data frame
-  ret <- r0 %>% bind_rows(., r1) %>% select(-oid_ric) %>% ungroup()
-  
-  return(ret)
-  
-}
 
 
 collapse_lab_EMPI_DATE <- function(dat, logger=NULL){
-  #' This function is applied to cleaned lab data set(on PK_ORDER_ID + RESULT_ITEM_CODE level, 
-  #' Picked by Corrected > Final ...) into EMPI_DATE level
+  #' This function is applied to cleaned lab data set[on PK_ORDER_ID + RESULT_ITEM_CODE level] with selected lab tests, 
+  #' into EMPI_DATE level.
+  #' The returned data set is long version of labs.
+  #' NOTE: RESULT_STATUS should only be: "Verified", "Corrected", "Final", "Old Verified", "Old Corrected", "Preliminary", "Performed", "Old Performed", "Incomplete"
+  #' All other RESULT_STATUS will be factored into NA.
   #' @param dat tibble Cleaned lab data set
   #' @return ret tibble Returned data set on EMPI_DATE level
   
-  
+
   
   n_labs <- sum(grepl("^Test", names(dat))) + sum(names(dat) %in% c("Aldo", "PRA", "DRC"))
   msg <- sprintf("collapse_lab_EMPI_DATE: Before collapsing to EMPI_DATE level of Labs: %d EMPI's, %d EMPI_DATE's, in %d total rows",
@@ -1128,6 +1221,63 @@ collapse_lab_EMPI_DATE <- function(dat, logger=NULL){
   
   return(ret)
 }
+
+
+
+
+collapse_lab_PK_ORDER_ID_RIC <- function(dat, lab_source){
+  #' This function is used to collapse raw lab function into PK_ORDER_ID + RESULT_ITEM_CODE level
+  #' which means for PK_ORDER_ID + RESULT_ITEM_CODE is the unique ID here
+  #' This function will pick according to RESULT_STATUS: Verified > Corrected > Final > Old Verified > Old Corrected >
+  #'  Preliminary > Performed > Old Performed> Incomplete > NA
+  #' @param dat tibble Raw lab data frame
+  #' @return ret tibble Returned collapsed Lab data
+  
+  
+  # apply picking function: from all lab into PK_ORDER_ID + RESULT_ITEM_CODE level
+  dat$oid_ric <- paste(dat$PK_ORDER_ID, dat$RESULT_ITEM_CODE, sep = "_")
+  
+  # factor RESULT_STATUS and assign levels
+  if(lab_source == "EPIC"){
+    dat$RESULT_STATUS <- factor(dat$RESULT_STATUS, levels = c("Corrected", "Final", "Preliminary", "Incomplete", NA))
+  }else if(lab_source == "CERNER"){
+    dat$RESULT_STATUS <- factor(dat$RESULT_STATUS, levels = c("Verified", "Corrected",  
+                                                              "Old Verified", "Old Corrected", 
+                                                              "Performed", "Old Performed", NA))
+    
+  }
+  
+  
+  # a list of PK_ORDER_ID + RESULT_ITEM_CODE which has multiple records
+  dups <- dat[which(duplicated(dat$oid_ric)), "oid_ric"]
+  
+  # separate dat into two parts
+  r0 <- subset(dat, !(oid_ric %in% dups$oid_ric))
+  r1 <- subset(dat, oid_ric %in% dups$oid_ric)
+  
+  # deal with those oid_ric which has multiple records
+  # It's picking the median
+  # TODO: 
+  r1 %<>%
+    group_by(oid_ric, RESULT_STATUS) %>%
+    mutate_at(vars(RESULT_VALUE), funs(median(., na.rm = TRUE))) %>%
+    ungroup() %>%
+    group_by(oid_ric) %>%
+    arrange(RESULT_STATUS) %>%
+    slice(1)
+  
+  # returning data frame
+  ret <- r0 %>% bind_rows(., r1) %>% select(-oid_ric) %>% ungroup()
+  
+  return(ret)
+  
+}
+
+
+
+
+
+
 
 
 collapse_RAR_Lab <- function(dat, EMPI_DATE_Level = TRUE, logger = NULL){
@@ -1262,6 +1412,118 @@ collapse_RAR_Lab <- function(dat, EMPI_DATE_Level = TRUE, logger = NULL){
   return(tmp)
   
 }
+
+
+get_labs <- function(dat_file, lab_source, select_lab=NULL,
+                        logger=NULL, 
+                     collapse_to_final_result=TRUE,
+                     ...) {
+  #' Capturing  labs from dat_file
+  #' @param dat_file
+  #' @param lab_source (EPIC, CERNER) [REALLY -- PDS/EPIC, PDS/CERNER]
+  #' @param select_lab function for filter lab tests
+  #' @return tibble
+
+  lab_raw <- load_Lab(dat_file = dat_file, lab_source = lab_source,
+                           logger=logger, ...)
+  
+  if (!is.null(select_lab)) {
+    lab <- select_lab(dat = lab_raw, lab_source = lab_source, logger=logger, ...)
+  }
+  
+  if (collapse_to_final_result) {
+    lab <- collapse_lab_PK_ORDER_ID_RIC(lab, lab_source=lab_source)
+  }
+  
+  msg <- sprintf("get_labs: Loaded and selected %s Labs", lab_source)
+  if(!is.null(logger)) logger$info(msg)
+  
+  return(lab)
+}
+
+
+
+get_RAR_lab_EPIC_CERNER <- function(lab_file_epic, lab_file_cerner, ...) {
+  
+  get_lab_EPIC_CERNER(list("EPIC"=lab_file_epic, "CERNER"=lab_file_cerner),
+                      RAR_only = FALSE, potassium_in = TRUE,
+                      num_labs=44,
+                      select_lab = select_RAR_lab, 
+                      ...)
+  
+}
+
+
+
+
+get_lab_EPIC_CERNER <- function(lab_sources = list("EPIC"=lab_file_epic, "CERNER"=lab_file_cerner),
+                                logger = NULL, left_censor_date,
+                                num_labs=0,
+                                select_lab = NULL,
+                                ...){
+  #' This is a very generalized function to read in raw lab data from both EPIC and CERNER 
+  #' and output a combined dataset for LAB data
+  #' @param lab_file_epic character EPIC lab raw data csv file
+  #' @param lab_file_cerner character CERNER lab raw data csv file
+  #' @return ret tibble Wide version of combined EPIC and CERNER data sets.
+  
+  #############################################################
+  #####    Read In EPIC & CERNER, Filtering Labs       ########
+  #############################################################
+  
+  
+  source_names <- names(lab_sources)
+  
+  lab_all <- do.call("rbind",
+                     lapply(source_names,
+                            function(x){
+                              tmp <- get_labs(dat_file = unlist(lab_sources[x]), 
+                                              lab_source = x, select_lab = select_lab,
+                                              num_labs = num_labs, 
+                                              logger=logger,...)
+                              
+                              
+                              if(x == "EPIC"){
+                                tmp %<>% select(-one_of("ORDERING_PROV"))
+                              }
+                              return(tmp)
+                            }
+                            )
+                     )
+  
+  ## This part is not gonna work... names(x) will return NULL 
+  # lab_all <- do.call('rbind',
+  #         lapply(lab_sources,
+  #            function(x) {
+  #              browser()
+  #              tmp <- get_labs(dat_file = as.character(x), lab_source = names(x), 
+  #                   select_lab = select_lab,
+  #                   logger=logger, ...)
+  #        
+  #              if(names(x) == 'EPIC'){ 
+  #               # NOTE: in EPIC, there is a column, "ORDERING_PROV", that is missing from CERNER, so remove it from EPIC
+  #                 tmp %<>% 
+  #                   select(-one_of("ORDERING_PROV"))
+  #              }
+  #              tmp
+  #           })
+  # )  
+  #   
+  
+  #############################################################
+  #####           collapse to EMPI_DATE Level          ########
+  #############################################################
+  
+  ret <- collapse_lab_EMPI_DATE(lab_all, 
+                                logger=logger)
+  
+  return(ret)
+}
+
+
+
+
+
 
 
 
@@ -1428,10 +1690,13 @@ enc_to_pts <- function(rar_enc_level, sbp_lower_limit = 140, dbp_lower_limit = 9
   
   # Add demo's
   demo <- enc %>% 
-    select(EMPI, GENDER_MASTER_CODE, BIRTH_DATE
-           , RACE_MASTER_CODE, RACE_MASTER_HISPANIC_YN) %>%
+    select(EMPI, GENDER_MASTER_CODE, BIRTH_DATE, RACE_MASTER_CODE, RACE_MASTER_HISPANIC_YN, ZIP) %>%
     group_by(EMPI) %>%
-    slice(1)
+    slice(1) %>%
+    ungroup()
+  ## calculate zip distances to 19104
+  demo <- zip_dist(demo, zip_col = "ZIP", destination="19104")
+  
   
   pts <- demo
   
@@ -1444,26 +1709,12 @@ enc_to_pts <- function(rar_enc_level, sbp_lower_limit = 140, dbp_lower_limit = 9
               high_sbp_n = sum(BP_SYSTOLIC >= sbp_lower_limit, na.rm = TRUE), 
               high_dbp_n = sum(BP_DIASTOLIC >= dbp_lower_limit, na.rm = TRUE),
               high_BP_n = sum(BP_SYSTOLIC >= sbp_lower_limit | BP_DIASTOLIC >= dbp_lower_limit, na.rm = TRUE),
-              high_BP_prop = high_BP_n / enc_bp_n, 
-              first_ENC_DATE = min(ENC_DATE), 
-              time_in_sys_yr = max(ENC_Time_in_Sys_days/365.25)) %>%
+              high_BP_prop = high_BP_n / enc_bp_n) %>%
     ungroup() 
   
   pts %<>% full_join(., BP_sum, by="EMPI")
   
-  # Add Time to 1st RAR Tests, Time to first Hyperaldo dx
-  time_to_sum <- enc %>% 
-    mutate(mask_RAR_test = !is.na(Aldo) | !is.na(PRA) | !is.na(DRC)) %>%
-    group_by(EMPI) %>%
-    summarize(time_to_1st_RAR_yr = min(ENC_Time_in_Sys_days[ which(mask_RAR_test) ])/365.25,
-              time_to_1st_hyperaldo_dx_yr = min(ENC_Time_in_Sys_days[which(Dx_h0_Hyperaldo > 0)])/365.25) %>%
-    ungroup() %>%
-    mutate_all(funs(replace(., is.infinite(.), NA)))
-  
-  
-  pts %<>% full_join(., time_to_sum, by="EMPI")
-  
-  
+ 
   # Add Primary Loc/ENTITY
   pri_ENTITY_sum <- enc %>%
     group_by(EMPI, MASTER_LOCATION_ENTITY) %>%
@@ -1481,7 +1732,7 @@ enc_to_pts <- function(rar_enc_level, sbp_lower_limit = 140, dbp_lower_limit = 9
   
   
   
-  # Add RAR Tests, RAR_Loc/ENTITY
+  # Add RAR Tests, RAR_DATE, RAR_Loc/ENTITY
   ## RAR
   rar_sum <- enc %>%
     select(EMPI, Aldo, PRA, DRC, ENC_DATE, MASTER_LOCATION_ENTITY, MASTER_LOCATION_DESCRIPTION) %>%
@@ -1507,12 +1758,7 @@ enc_to_pts <- function(rar_enc_level, sbp_lower_limit = 140, dbp_lower_limit = 9
   # Add RAR Age
   pts$rar_age <- as.numeric(difftime(pts$RAR_DATE, pts$BIRTH_DATE, units = "days")/365.25)
   
-  # Add a RAR_DATE time stamp into enc
-  enc %<>% 
-    full_join(., 
-              rar_sum[,c("EMPI", "RAR_DATE")], by="EMPI")
-  
-  
+ 
   
   
   
@@ -1524,6 +1770,108 @@ enc_to_pts <- function(rar_enc_level, sbp_lower_limit = 140, dbp_lower_limit = 9
   
   pts %<>% full_join(., n_rar_sum, by="EMPI") %>%
     mutate(RAR_tests_n = ifelse(is.na(RAR_tests_n), 0, RAR_tests_n))
+  
+  
+  
+  # Add first AVS DATE, AVS Indicator
+  # NOTE: AVS Test Results are taken here, which are last ones
+  avs <- enc %>% select(EMPI, ENC_DATE, `Test_Left_Aldos_ng/dL`, `Test_LCORT_ug/dL`, `Test_Right_Aldos_ng/dL`, `Test_RCORT_ug/dL`, `Test_IVC_Aldosterone_ng/dL`, `Test_ICORT_ug/dL`) %>%
+    filter((!is.na(`Test_Left_Aldos_ng/dL`) + !is.na(`Test_Right_Aldos_ng/dL`) + !is.na(`Test_IVC_Aldosterone_ng/dL`)) >= 1) %>%
+    group_by(EMPI) %>%
+    arrange(desc(ENC_DATE)) %>%   ## pick the last value
+    slice(1) %>%
+    ungroup() %>%
+    mutate(AVS_indicator = TRUE) %>%
+    rename(AVS_first_DATE = ENC_DATE)
+      
+    
+  pts %<>% full_join(., avs, by="EMPI")
+  
+  
+  # Add U Aldo DATE, Indicator
+  # NOTE: U Aldo Test Results are taken here, which are last ones
+  # NOTE: UAldo_indicator is TRUE when there is Urine Aldo
+  ualdo <- enc %>% select(EMPI, ENC_DATE, `Test_24HR_URINE_CREATININE_mg/day`, `Test_URINE_ALDOSTERONE_ug/day`) %>%
+    filter(!is.na(`Test_URINE_ALDOSTERONE_ug/day`)) %>%
+    group_by(EMPI) %>%
+    arrange(desc(ENC_DATE)) %>%     ## pick the last value
+    slice(1) %>%
+    ungroup() %>%
+    mutate(UAldo_indicator = TRUE) %>%
+    rename(UAldo_first_DATE = ENC_DATE)
+  
+  pts %<>% full_join(., ualdo, by="EMPI")
+  
+  
+  
+  # Add Time to/from 1st RAR Tests, Time to/from first Hyperaldo dx, Time to/from 1st AVS
+  time_to_sum <- enc %>% 
+    mutate(mask_RAR_test = !is.na(Aldo) | !is.na(PRA) | !is.na(DRC),
+           mask_AVS = !is.na(`Test_Left_Aldos_ng/dL`) | !is.na(`Test_Right_Aldos_ng/dL`) | !is.na(`Test_IVC_Aldosterone_ng/dL`)) %>%
+    group_by(EMPI) %>%
+    summarize(
+      time_in_sys_yr = max(ENC_Time_in_Sys_days/365.25),
+      first_ENC_DATE = min(ENC_DATE),
+      first_ENC_BP_DATE = min(ENC_DATE[which(!is.na(BP_SYSTOLIC) | !is.na(BP_DIASTOLIC))]),
+      last_ENC_DATE = max(ENC_DATE),
+      last_ENC_BP_DATE = max(ENC_DATE[which(!is.na(BP_SYSTOLIC) | !is.na(BP_DIASTOLIC))]),
+      
+      
+      ### 1st enc to 1st RAR/HA Dx
+      time_enc_to_1st_RAR_yr = min(ENC_Time_in_Sys_days[which(mask_RAR_test)])/365.25,
+      time_enc_to_1st_hyperaldo_dx_yr = min(ENC_Time_in_Sys_days[which(Dx_h0_Hyperaldo > 0)])/365.25,
+      
+      
+      ### last enc to 1st RAR/HA Dx
+      time_enc_after_1st_RAR_yr = 
+        (max(ENC_Time_in_Sys_days) - min(ENC_Time_in_Sys_days[which(mask_RAR_test)]))/365.25,
+      
+      time_enc_after_1st_hyperaldo_dx_yr = 
+        (max(ENC_Time_in_Sys_days) - min(ENC_Time_in_Sys_days[which(Dx_h0_Hyperaldo > 0)]))/365.25,
+      
+      
+      ### 1st bp_enc to 1st RAR/HA Dx
+      time_bp_to_1st_RAR_yr = 
+        min(ENC_Time_in_Sys_days[mask_RAR_test & (!is.na(BP_SYSTOLIC) | !is.na(BP_DIASTOLIC))])/365.25,
+      
+      time_bp_to_1st_hyperaldo_dx_yr = 
+        min(ENC_Time_in_Sys_days[Dx_h0_Hyperaldo > 0 & (!is.na(BP_SYSTOLIC) | !is.na(BP_DIASTOLIC))])/365.25,
+      
+      ### last bp_enc to 1st RAR/HA Dx
+      time_bp_after_1st_RAR_yr =
+        (max(ENC_Time_in_Sys_days[!is.na(BP_SYSTOLIC) | !is.na(BP_DIASTOLIC)]) - min(ENC_Time_in_Sys_days[which(mask_RAR_test)]))/365.25,
+      
+      time_bp_after_1st_hyperaldo_dx_yr =
+        (max(ENC_Time_in_Sys_days[!is.na(BP_SYSTOLIC) | !is.na(BP_DIASTOLIC)]) - min(ENC_Time_in_Sys_days[which(Dx_h0_Hyperaldo >0)]))/365.25,
+      
+      
+      
+      ## AVS
+      ### 1st enc to 1st AVS
+      time_enc_to_1st_AVS_yr = min(ENC_Time_in_Sys_days[which(mask_AVS)])/365.25,
+      ### last enc to 1st AVS
+      time_enc_after_1st_AVS_yr = (max(ENC_Time_in_Sys_days) - min(ENC_Time_in_Sys_days[which(mask_AVS)]))/365.25,
+      ### 1st bp_enc to 1st AVS
+      time_bp_to_1st_AVS_yr = 
+        min(ENC_Time_in_Sys_days[mask_AVS & (!is.na(BP_SYSTOLIC) | !is.na(BP_DIASTOLIC))])/365.25,
+      ### last bp_enc to 1st AVS
+      time_bp_after_1st_AVS_yr =
+        (max(ENC_Time_in_Sys_days[!is.na(BP_SYSTOLIC) | !is.na(BP_DIASTOLIC)]) - min(ENC_Time_in_Sys_days[which(mask_AVS)]))/365.25
+      
+      
+      
+    ) %>%
+    ungroup() %>%
+    mutate_all(funs(replace(., is.infinite(.), NA)))
+  
+  
+  pts %<>% full_join(., time_to_sum, by="EMPI")
+  
+  
+  
+  
+  
+  
   
   
   # Add SBP/DBP
@@ -1557,7 +1905,11 @@ enc_to_pts <- function(rar_enc_level, sbp_lower_limit = 140, dbp_lower_limit = 9
   
   # Add Labs
   ## NOTE: currently using a 14-day time window for lab tests
-  lab_cols <- grepl("^Test", names(enc))
+  ## NOTE: explicitly exclude AVS and UAldo Lab tests here
+  all_lab_cols <- grepl("^Test", names(enc))
+  avs_ualdo_cols <- !(names(enc) %in%  c("Test_Left_Aldos_ng/dL", "Test_LCORT_ug/dL", "Test_Right_Aldos_ng/dL", "Test_RCORT_ug/dL", "Test_IVC_Aldosterone_ng/dL", "Test_ICORT_ug/dL", "Test_24HR_URINE_CREATININE_mg/day", "Test_URINE_ALDOSTERONE_ug/day"))
+  
+  lab_cols <- all_lab_cols & avs_ualdo_cols
   lab_sum <- enc %>% 
     select(EMPI, ENC_DATE, RAR_DATE, names(enc)[lab_cols]) %>%
     mutate(time_to_RAR = abs(as.numeric(difftime(ENC_DATE, RAR_DATE, units="days")))) %>%
@@ -1623,3 +1975,4 @@ enc_to_pts <- function(rar_enc_level, sbp_lower_limit = 140, dbp_lower_limit = 9
   
     return(pts)
 }
+
