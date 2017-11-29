@@ -50,13 +50,14 @@ left_censor_date <- as.Date(config$RAR$left_censor_date_chr)
 enc_file <- config[[dat_version]]$enc_file
 dx_file <- config[[dat_version]]$dx_file
 demo_file <- config[[dat_version]]$demo_file
-lab_file_epic <- config[[dat_version]]$lab_file_epic
-lab_file_cerner <- config[[dat_version]]$lab_file_cerner
+lab_file_PDS_epic <- config[[dat_version]]$lab_file_PDS_epic
+lab_file_PDS_cerner <- config[[dat_version]]$lab_file_PDS_cerner
 empi_mrn_file <- config[[dat_version]]$empi_mrn_file
 
+service_grouping_file = config[[dat_version]]$service_grouping_file
 icd_map_file <- config[[dat_version]]$icd_map_file
 
-
+seed_config <- config[[dat_version]]$seed
 
 
 
@@ -102,7 +103,7 @@ logger$info("Biostat Data Cleaning Starts here: version: %s. Date: %s",
 
 ## Enc's
 
-rar_enc <- load_RAR_enc(dat_file = enc_file, 
+rar_enc <- load_RAR_enc(dat_file = enc_file, service_grouping_file = service_grouping_file,
                         bp_only = FALSE, EMPI_DATE_Level = TRUE, outpatient_only = TRUE, logger = logger)
 
 # save(rar_enc, file = "bios_data.RData")
@@ -127,11 +128,11 @@ rar_demo <- load_RAR_PtDemo(dat_file = demo_file, logger = logger)
 # save(rar_enc, rar_dx, rar_demo, file = "PA_analysis/Biostat_process/bios_data.RData")
 
 
-## Labs from EPIC and CERNER
+## Labs from PDS_EPIC and PDS_CERNER
 ## lab_all <- get_RAR_lab_EPIC_CERNER(lab_file_epic = lab_file_epic, lab_file_cerner = lab_file_cerner, logger = logger)
 
 
-lab_all <- get_RAR_lab_EPIC_CERNER(lab_file_epic = lab_file_epic, lab_file_cerner = lab_file_cerner,
+lab_all <- get_RAR_lab_EPIC_CERNER(lab_file_epic = lab_file_PDS_epic, lab_file_cerner = lab_file_PDS_cerner,
                                    left_censor_date = left_censor_date, logger=logger)
 
 
@@ -219,22 +220,22 @@ save(rar_mg, pts, file = paste("PA_analysis/Biostat_process/bios_data_enc_pts_",
 ####################
 ## De-identify RAR- ENC Level
 
-enc_level <- deidentify(dat = rar_mg, primary_key = "EMPI_DATE", pt_id = "EMPI", mode = "create", 
+enc_deid <- deidentify(dat = rar_mg, primary_key = "EMPI_DATE", pt_id = "EMPI", mode = "create", 
                         drop_cols = c("SOURCE_CODE", "PATIENT_MASTER_CLASS"), 
                         dt_cols = c("ENC_DATE", "BIRTH_DATE"),
                         out_file_for_mapping = paste(output_dir, 
                                                      paste(out_root, paste("de_id_mapping_",dat_version, sep = ""), "csv", sep="."),
                                                      sep="/"), 
-                        seed = config$RAR$seed, logger=logger)
+                        seed = seed_config, logger=logger)
 
 msg <- sprintf("deidentify: enc level data deidentified")
 if(!is.null(logger)) logger$info(msg)
 
 
-enc_level %<>% select(-BIRTH_DATE)
+enc_deid %<>% select(-BIRTH_DATE)
 
 ### reorder columns
-enc_level %<>% select(DE_PT_ID, DE_primary_key, PA_AVS_tot_0115, ENC_DATE,
+enc_deid %<>% select(DE_PT_ID, DE_primary_key, PA_AVS_tot_0115, ENC_DATE,
                       ENC_Time_in_Sys_days, GENDER_MASTER_CODE, 
                       RACE_MASTER_CODE, RACE_MASTER_HISPANIC_YN,
                       Age, everything())
@@ -244,7 +245,7 @@ enc_level %<>% select(DE_PT_ID, DE_primary_key, PA_AVS_tot_0115, ENC_DATE,
 ## De-identify RAR - Patient Level
 pt_level <- deidentify(dat = pts, primary_key = NULL, pt_id = "EMPI", mode = "load",
                        drop_cols = c("SOURCE_CODE", "PATIENT_MASTER_CLASS", "EMPI_DATE", "ORDER_START_DATE", "ENC_DATE"), 
-                       dt_cols = c("BIRTH_DATE", "first_ENC_DATE", "RAR_DATE","bp_ENC_DATE"),
+                       dt_cols = c("BIRTH_DATE", "first_ENC_DATE", "RAR_DATE","bp_ENC_DATE", "AVS_first_DATE", "UAldo_first_DATE"),
                        in_file_for_mapping = paste(output_dir, 
                                                    paste(out_root, paste("de_id_mapping_",dat_version, sep = ""), "csv", sep="."),
                                                    sep="/"), logger)
@@ -260,12 +261,12 @@ pt_level %<>% select(DE_PT_ID, PA_AVS_tot_0115, everything())
 
 
 
-save(enc_level, pt_level, file = paste(output_dir, paste(out_root, paste("bios_data_deid_", dat_version, sep=""), "RData", sep="."),
+save(enc_deid, pt_level, file = paste(output_dir, paste(out_root, paste("bios_data_deid_", dat_version, sep=""), "RData", sep="."),
                                        sep="/"))
 
 
 # Write out resulting datasets
-write.csv(enc_level, 
+write.csv(enc_deid, 
           file = paste(output_dir, 
                        paste(out_root, paste("de_enc_level_",dat_version, sep=""), "csv", sep="."),
                        sep="/"),

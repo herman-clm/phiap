@@ -381,9 +381,11 @@ prep_RAR_renin <- function(res1, others) {
 
 
 
-load_RAR_enc <- function(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_ENC.csv", bp_only = FALSE, EMPI_DATE_Level = TRUE, outpatient_only = TRUE, left_censor_date = as.Date("1997-01-01"), logger = NULL){
+load_RAR_enc <- function(dat_file, service_grouping_file = "../../ref_data/Services.DSH_11_17.csv", 
+                         bp_only = FALSE, EMPI_DATE_Level = TRUE, outpatient_only = TRUE, left_censor_date = as.Date("1997-01-01"), logger = NULL){
   #' Load in the RAR Encounter data, and do some basic cleaning
   #' @param dat_file string Raw data text file location 
+  #' @param service_grouping_file string Grouping file for SERVICE_MASTER_CODE
   #' @param bp_only logic If TRUE, only keep BP's, excluding all other detailed info. Default is FALSE
   #' @param EMPI_DATE_Level logic If TRUE, collapse into EMPI_DATE Level. Default is TRUE
   #' @param outpatient_only logic If TRUE, only include Outpatients. Default is TRUE
@@ -503,6 +505,24 @@ load_RAR_enc <- function(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_ENC.csv"
     rar_enc <- r0 %>% bind_rows(., r1) %>% ungroup()
     
     
+    
+    # regrouping SERVICE_MASTER_CODE
+    service_grp <- read.csv(file=service_grouping_file, stringsAsFactors = FALSE, header = TRUE)
+    service_grp %<>% 
+      group_by(SERVICE_MASTER_CODE) %>% 
+      slice(1) %>% 
+      select(SERVICE_GROUP_def) %>% 
+      ungroup()
+    
+    rar_enc %<>% left_join(., service_grp, by="SERVICE_MASTER_CODE")
+    
+    
+    msg <- sprintf("load_RAR_enc: SERVICE_MASTER_CODE[%s] was grouped into SERVICE_GROUP_def [%s].", 
+                   length(unique(rar_enc$SERVICE_MASTER_CODE)),length(unique(rar_enc$SERVICE_GROUP_def)))
+    if(!is.null(logger)) logger$info(msg)
+    
+    
+    
     msg <- sprintf("load_RAR_enc: After collapsing into EMPI_DATE level, %d unique EMPI_DATE, in %d total rows.", 
                    length(unique(rar_enc$EMPI_DATE)), nrow(rar_enc))
     if(!is.null(logger)) logger$info(msg)
@@ -513,6 +533,24 @@ load_RAR_enc <- function(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_ENC.csv"
 
   
   # TODO: If HAR_Level = FALSE, need to collapse into PK_ENCOUNTER_ID level
+  
+  
+  # regrouping SERVICE_MASTER_CODE
+  service_grp <- read.csv(file=service_grouping_file, stringsAsFactors = FALSE, header = TRUE)
+  service_grp %<>% 
+    group_by(SERVICE_MASTER_CODE) %>% 
+    slice(1) %>% 
+    select(SERVICE_GROUP_def) %>% 
+    ungroup()
+  
+  rar_enc %<>% left_join(., service_grp, by="SERVICE_MASTER_CODE")
+  
+  msg <- sprintf("load_RAR_enc: SERVICE_MASTER_CODE[%s] was grouped into SERVICE_GROUP_def [%s].", 
+                 length(unique(rar_enc$SERVICE_MASTER_CODE)),length(unique(rar_enc$SERVICE_GROUP_def)))
+  if(!is.null(logger)) logger$info(msg)
+  
+    
+  
   
   msg <- sprintf("load_RAR_enc: Returned clean-up enc data. %d unique EMPI's, %d unique EMPI_DATE, in %d total rows.", 
                  length(unique(rar_enc$EMPI)),length(unique(rar_enc$EMPI_DATE)), nrow(rar_enc))
@@ -793,7 +831,7 @@ load_Lab <- function(dat_file,  lab_source, adjust_up = 1.5, adjust_down = 0.5,
   
   
   # read in the files with specified column classes
-  if(lab_source == "EPIC"){
+  if(lab_source == "PDS_EPIC"){
     # specify Column Classes
     colClasses <- c(ENC_DATE = "PDS_DateTime", ORDER_START_DATE = "PDS_DateTime", O_SOURCE_LAST_UPDATE = "PDS_DateTime", 
                     RESULT_DATE = "PDS_DateTime", 
@@ -803,7 +841,7 @@ load_Lab <- function(dat_file,  lab_source, adjust_up = 1.5, adjust_down = 0.5,
                     ORDERING_PROV = 'character', HAR_NUMBER = 'character', 
                     ORDER_GROUP = 'character', RESULT_TEXT = 'character', RESULT_RESOURCE = "character", 
                     ORES_SOURCE_LAST_UPDATE = "PDS_DateTime", LOINC_CODE = 'character')
-  }else if(lab_source == "CERNER"){
+  }else if(lab_source == "PDS_CERNER"){
     colClasses <-  c(ENC_DATE = "PDS_DateTime", ORDER_START_DATE = "PDS_DateTime", O_SOURCE_LAST_UPDATE = "PDS_DateTime", 
                     RESULT_DATE = "PDS_DateTime", 
                     EMPI = 'character', PK_ENCOUNTER_ID = 'character', PK_ORDER_ID = 'character', ORDER_NAME = 'character', 
@@ -826,7 +864,7 @@ load_Lab <- function(dat_file,  lab_source, adjust_up = 1.5, adjust_down = 0.5,
                     ADMITTING_PROV = 'character', MASTER_LOCATION_DESCRIPTION = 'character')
     
   }else{
-    err_msg <- sprintf("load_lab: Unspecified Lab Source: %s", lab_source)
+    err_msg <- sprintf("load_Lab: Unspecified Lab Source: %s", lab_source)
     if(!is.null(logger)) logger$error(err_msg)
     stop(err_msg)
   }
@@ -835,7 +873,7 @@ load_Lab <- function(dat_file,  lab_source, adjust_up = 1.5, adjust_down = 0.5,
     data_columns <- read.csv(dat_file,nrows = 1, header = T) %>% names(.)
     cols_to_exclude <- names(colClasses)[which(!names(colClasses) %in% data_columns)]
     if(length(cols_to_exclude)) {
-      if(!is.null(logger)) logger$warn(paste("Excluding columns:", paste(cols_to_exclude, collapse=", ")))
+      if(!is.null(logger)) logger$warn(paste("load_Lab: Excluding columns:", paste(cols_to_exclude, collapse=", ")))
     
       colClasses <- colClasses[which(names(colClasses) %in% data_columns)]
     }
@@ -845,7 +883,7 @@ load_Lab <- function(dat_file,  lab_source, adjust_up = 1.5, adjust_down = 0.5,
   rar_lab <- fread_epic(dat_file = dat_file, colClasses = colClasses, logger = logger)
 
   
-  msg <- sprintf("load_Lab: Read raw Lab data from [%s] %d EMPI's, in %d total rows.", 
+  msg <- sprintf("load_Lab: [%s] Read raw Lab data: %d EMPI's, in %d total rows.", 
                  lab_source,length(unique(rar_lab$EMPI)), nrow(rar_lab))
   if(!is.null(logger)) logger$info(msg)
   
@@ -863,7 +901,7 @@ load_Lab <- function(dat_file,  lab_source, adjust_up = 1.5, adjust_down = 0.5,
   
   
   
-  msg <- sprintf("load_Lab: Return ALL Lab data from [%s]. %d EMPI's, in %d total rows.", 
+  msg <- sprintf("load_Lab: [%s] Finish reading in ALL Lab data: %d EMPI's, in %d total rows.", 
                  lab_source, length(unique(rar_lab$EMPI)), nrow(rar_lab))
   if(!is.null(logger)) logger$info(msg)
   
@@ -879,7 +917,7 @@ select_RAR_lab <- function(dat, lab_source,
                            logger = NULL, ...){
   #' This function is used to select labs, instead of using all labs. The returned data set is not collapsed.
   #' @param dat tibble Pre-cleaned RAR data 
-  #' @param lab_source character Lab source: "EPIC" or "CERNER" 
+  #' @param lab_source character Lab source: "PDS_EPIC" or "PDS_CERNER" 
   #' NOTE: Currently, only [AVS] tests were drawn from CERNER. RAR, potassium [U Aldo] and all other tests were from EPIC.
   #' NOTE: When lab_source is "CERNER", all other EPIC-related options would be no longer in use (since we don't need them in CERNER for now)
   #' @param RAR_only logit If TRUE, will only return Aldo/Renin results
@@ -912,7 +950,7 @@ select_RAR_lab <- function(dat, lab_source,
   
   
   
-  if(lab_source == "CERNER"){
+  if(lab_source == "PDS_CERNER"){
     # select Labs from CERNER
     # Note that to avoid `SAMPLE` fom RESULT_ITEM_CODE, only records with non-NA RESULT_VALUE were kept
     dat %<>% filter(!is.na(dat$RESULT_VALUE))
@@ -921,7 +959,7 @@ select_RAR_lab <- function(dat, lab_source,
     ## AVS
     ### some Left Cortisols [C LCORT, LCORT] were all renamed to LEFT CORTISOL
     if(sum(dat$RESULT_ITEM_CODE %in% c("RIGHT CORTISOL", "LEFT CORTISOL", "IVC CORTISOL")) & !is.null(logger)){
-      logger$info("lab_select: CERNER AVS lab of 'RIGHT CORTISOL', 'LEFT CORTISOL', 'IVC CORTISOL' were renamed.")
+      logger$info("lab_select: PDS_CERNER AVS lab of 'RIGHT CORTISOL', 'LEFT CORTISOL', 'IVC CORTISOL' were renamed.")
     }
     
     
@@ -941,6 +979,9 @@ select_RAR_lab <- function(dat, lab_source,
     
     ret %<>% bind_rows(., avs_lab)
     
+    msg <- sprintf("lab_select: [%s] %d different AVS lab tests were selected.",
+                   lab_source, length(unique(ret$Test)))
+    
     # ## Aldosterone, Urine
     # ualdo <- dat %>% 
     #   filter(RESULT_ITEM_CODE %in% c("U Aldosterone","Cre D Aldos")) %>%
@@ -952,13 +993,13 @@ select_RAR_lab <- function(dat, lab_source,
     
     # remove duplicates, if any
     if(sum(duplicated(ret))){
-      if(!is.null(logger)) logger$warn("lab_select: [PDS_CERNER] Duplicated rows in Lab's are present")
+      if(!is.null(logger)) logger$warn("lab_select: [PDS_CERNER] Duplicated rows in Lab's are present. Removed duplicates.")
       ret %<>% filter(!duplicated(ret))
     }
    
     
     
-  }else if(lab_source == "EPIC"){
+  }else if(lab_source == "PDS_EPIC"){
     
     # select Labs from EPIC
     ## Explicitly exclude RESULT_ITEM_CODE's that are imported from CERNER
@@ -1173,11 +1214,19 @@ collapse_lab_EMPI_DATE <- function(dat, logger=NULL){
   
   ## for r1 (multiple RIC in EMPI_DATE), pick by 1) count of ORDER_START_DATE 2) arbitrary PK_ORDER_ID
   ### same test at same time (but from different ORDER: LIVER FUNCTIONAL PANEL & CMP), so use median to combine
-  r1 %<>% group_by(EMPI_DATE_RIC, ORDER_START_DATE) %>% mutate_at(vars(RESULT_VALUE), funs(median(., na.rm=TRUE))) %>% slice(1)
+  r1 %<>% group_by(EMPI_DATE_RIC, ORDER_START_DATE) %>% 
+    mutate_at(vars(RESULT_VALUE), funs(median(., na.rm=TRUE))) %>% 
+    slice(1)
   
   ### Pick by 1) count of ORDER_START_DATE 2) PK_ORDER_ID
   r1$EMPI_DATE_OSD <- paste(r1$EMPI_DATE, r1$ORDER_START_DATE)
-  r1 <- r1 %>% group_by(EMPI_DATE_OSD) %>% summarize(N=n()) %>% ungroup() %>% full_join(., r1, by = "EMPI_DATE_OSD") %>% group_by(EMPI_DATE_RIC) %>% arrange(desc(N), desc(PK_ORDER_ID)) %>% slice(1)
+  r1 <- r1 %>% group_by(EMPI_DATE_OSD) %>% 
+    summarize(N=n()) %>% 
+    ungroup() %>% 
+    full_join(., r1, by = "EMPI_DATE_OSD") %>% 
+    group_by(EMPI_DATE_RIC) %>% 
+    arrange(desc(N), desc(PK_ORDER_ID)) %>% 
+    slice(1)
   
   
   ## combine r0 and r1 together
@@ -1238,9 +1287,9 @@ collapse_lab_PK_ORDER_ID_RIC <- function(dat, lab_source){
   dat$oid_ric <- paste(dat$PK_ORDER_ID, dat$RESULT_ITEM_CODE, sep = "_")
   
   # factor RESULT_STATUS and assign levels
-  if(lab_source == "EPIC"){
+  if(lab_source == "PDS_EPIC"){
     dat$RESULT_STATUS <- factor(dat$RESULT_STATUS, levels = c("Corrected", "Final", "Preliminary", "Incomplete", NA))
-  }else if(lab_source == "CERNER"){
+  }else if(lab_source == "PDS_CERNER"){
     dat$RESULT_STATUS <- factor(dat$RESULT_STATUS, levels = c("Verified", "Corrected",  
                                                               "Old Verified", "Old Corrected", 
                                                               "Performed", "Old Performed", NA))
@@ -1445,7 +1494,7 @@ get_labs <- function(dat_file, lab_source, select_lab=NULL,
 
 get_RAR_lab_EPIC_CERNER <- function(lab_file_epic, lab_file_cerner, ...) {
   
-  get_lab_EPIC_CERNER(list("EPIC"=lab_file_epic, "CERNER"=lab_file_cerner),
+  get_lab_EPIC_CERNER(list("PDS_EPIC"=lab_file_epic, "PDS_CERNER"=lab_file_cerner),
                       RAR_only = FALSE, potassium_in = TRUE,
                       num_labs=44,
                       select_lab = select_RAR_lab, 
@@ -1456,7 +1505,7 @@ get_RAR_lab_EPIC_CERNER <- function(lab_file_epic, lab_file_cerner, ...) {
 
 
 
-get_lab_EPIC_CERNER <- function(lab_sources = list("EPIC"=lab_file_epic, "CERNER"=lab_file_cerner),
+get_lab_EPIC_CERNER <- function(lab_sources = list("PDS_EPIC"=lab_file_PDS_epic, "PDS_CERNER"=lab_file_PDS_cerner),
                                 logger = NULL, left_censor_date,
                                 num_labs=0,
                                 select_lab = NULL,
@@ -1483,7 +1532,7 @@ get_lab_EPIC_CERNER <- function(lab_sources = list("EPIC"=lab_file_epic, "CERNER
                                               logger=logger,...)
                               
                               
-                              if(x == "EPIC"){
+                              if(x == "PDS_EPIC"){
                                 tmp %<>% select(-one_of("ORDERING_PROV"))
                               }
                               return(tmp)
@@ -1758,7 +1807,10 @@ enc_to_pts <- function(rar_enc_level, sbp_lower_limit = 140, dbp_lower_limit = 9
   # Add RAR Age
   pts$rar_age <- as.numeric(difftime(pts$RAR_DATE, pts$BIRTH_DATE, units = "days")/365.25)
   
- 
+  # Add a RAR_DATE time stamp into enc
+  enc %<>% 
+    full_join(., 
+              rar_sum[,c("EMPI", "RAR_DATE")], by="EMPI")
   
   
   

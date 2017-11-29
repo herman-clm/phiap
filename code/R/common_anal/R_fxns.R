@@ -35,6 +35,7 @@ round2 <- function(x, n) {
     z = trunc(z) / 10^n
     z*posneg
 }
+
 numericize <- function(x, adjust_up=1.05, adjust_down=0.95) {
   #' Convert results reported as greater than (>) or less than (<) to approximate value
   #'
