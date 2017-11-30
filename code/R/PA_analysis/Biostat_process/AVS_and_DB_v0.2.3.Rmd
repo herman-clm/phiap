@@ -1,0 +1,173 @@
+---
+title: "AVS Lab Test vs RDB"
+output: 
+  html_document:
+    theme: journal
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    fig_width: 15
+    fig_height: 8
+    df_print: paged
+---
+
+```{r setup, echo=FALSE}
+suppressMessages(library(reshape2))
+suppressMessages(library(lubridate))
+suppressMessages(library(gridExtra))
+
+suppressMessages(library(tidyverse))
+suppressMessages(library(magrittr))
+suppressMessages(library(ini))
+suppressMessages(library(ggplot2))
+
+suppressMessages(library(knitr))
+suppressMessages(library(scales))
+
+# suppressMessages(library(reporttools))
+# suppressMessages(library(readxl))
+# suppressMessages(library(gtools))
+# source("~/repos/Daniel_Herman_Aldosterone_2017_03/code/R/common_anal/RAR_fxns.R", chdir = TRUE)
+
+```
+
+# Load and Modify
+```{r load_data, include=FALSE, cache=TRUE, cache.lazy=FALSE}
+load("/data/processed_data/RAR/bios_data_enc_pts_v0.2.3.RData")
+```
+
+For AVS and UAldo indicator, change NA to FALSE. Also add them in enc level:
+```{r NA_to_F, cache.lazy=FALSE}
+pts[is.na(pts$AVS_indicator), "AVS_indicator"] <- FALSE
+pts[is.na(pts$UAldo_indicator), "UAldo_indicator"] <- FALSE
+
+rar_mg %<>% mutate(AVS_indicator = ifelse(!is.na(`Test_Left_Aldos_ng/dL`) | !is.na(`Test_Right_Aldos_ng/dL`) | !is.na(`Test_IVC_Aldosterone_ng/dL`), TRUE, FALSE), 
+                   UAldo_indicator = ifelse(!is.na(`Test_URINE_ALDOSTERONE_ug/day`), TRUE, FALSE))
+```
+
+
+# AVS
+```{r overall}
+table(pts$AVS_indicator)
+```
+
+```{r avs_year_2}
+table(pts$AVS_indicator, year(pts$AVS_first_DATE))
+```
+AVS Lab Tests starts in 2008.
+
+```{r n_avs}
+rar_mg %>% group_by(EMPI) %>%
+  summarise(N_AVS = sum(AVS_indicator)) %>%
+  count(N_AVS)
+```
+
+
+```{r n_ualdo}
+rar_mg %>% group_by(EMPI) %>%
+  summarise(N_UAldo = sum(UAldo_indicator)) %>%
+  count(N_UAldo)
+```
+
+
+# AVS & RDB
+```{r avs_rdb}
+table(pts$AVS_indicator, pts$PA_AVS_tot_0115)
+```
+For the patients who had AVS Tests:
+```{r avs_year}
+table(pts$AVS_indicator, pts$PA_AVS_tot_0115, year(pts$AVS_first_DATE))
+```
+For the patients who had AVS Tests:
+```{r bp_year}
+table(pts$AVS_indicator, pts$PA_AVS_tot_0115, year(pts$first_ENC_DATE))
+```
+
+## AVS but not RDB
+```{r AVS_notRDB_year}
+table(pts$AVS_indicator & !pts$PA_AVS_tot_0115 & year(pts$first_ENC_BP_DATE) < 2015)
+```
+
+```{r AVS_notRDB_by_year}
+table(pts$AVS_indicator & !pts$PA_AVS_tot_0115, year(pts$first_ENC_BP_DATE))
+```
+
+Find out these patients
+```{r AVS_notRDB_lst, include=FALSE, eval=FALSE}
+pts %>% filter(AVS_indicator & !PA_AVS_tot_0115) %>% 
+  # arrange(desc(year(first_ENC_BP_DATE))) %>%
+  filter(year(first_ENC_BP_DATE) == 2014) %>%
+  View()
+
+```
+
+
+## not AVS but RDB
+```{r not_AVS_RDB}
+table(!pts$AVS_indicator & pts$PA_AVS_tot_0115, year(pts$first_ENC_BP_DATE))
+```
+
+
+Find out these patients
+```{r not_AVS_RDB_lst, include=FALSE, eval=FALSE}
+pts %>% filter(!AVS_indicator & PA_AVS_tot_0115) %>% 
+  # arrange(desc(year(first_ENC_BP_DATE))) %>%
+  filter(year(first_ENC_BP_DATE) == 2010) %>%
+  View()
+
+```
+
+
+```{r}
+colClasses_E <- c(ENC_DATE = "PDS_DateTime", ORDER_START_DATE = "PDS_DateTime", O_SOURCE_LAST_UPDATE = "PDS_DateTime", 
+                    RESULT_DATE = "PDS_DateTime", 
+                    EMPI = 'character', PK_ENCOUNTER_ID = 'character', PK_ORDER_ID = 'character', ORDER_NAME = 'character', 
+                    ORDER_ITEM_CODE = 'character', PK_ORDER_RESULT_ID = 'character', RESULT_VALUE = 'character',
+                    UNIT_OF_MEASURE = 'character', RESULT_STATUS = 'character', RESULT_ITEM_CODE = 'character', 
+                    ORDERING_PROV = 'character', HAR_NUMBER = 'character', 
+                    ORDER_GROUP = 'character', RESULT_TEXT = 'character', RESULT_RESOURCE = "character", 
+                    ORES_SOURCE_LAST_UPDATE = "PDS_DateTime", LOINC_CODE = 'character')
+
+colClasses_C <-  c(ENC_DATE = "PDS_DateTime", ORDER_START_DATE = "PDS_DateTime", O_SOURCE_LAST_UPDATE = "PDS_DateTime", 
+                    RESULT_DATE = "PDS_DateTime", 
+                    EMPI = 'character', PK_ENCOUNTER_ID = 'character', PK_ORDER_ID = 'character', ORDER_NAME = 'character', 
+                    ORDER_ITEM_CODE = 'character', PK_ORDER_RESULT_ID = 'character', RESULT_VALUE = 'character',
+                    UNIT_OF_MEASURE = 'character', RESULT_STATUS = 'character', RESULT_ITEM_CODE = 'character', 
+                    HAR_NUMBER = 'character', 
+                    ORDER_GROUP = 'character', RESULT_TEXT = 'character', RESULT_RESOURCE = "character", 
+                    ORES_SOURCE_LAST_UPDATE = "PDS_DateTime", LOINC_CODE = 'character')
+
+
+lab_epic <- fread("/data/raw_data/PA/RAR_v0.2.3/DINGXI_RAR_PTS_LABS.csv", stringsAsFactors=F, colClasses = colClasses_E)
+lab_cerner <- fread("/data/raw_data/PA/RAR_v0.2.3/DINGXI_RAR_PTS_LABSC.csv", stringsAsFactors=F, colClasses = colClasses_C)
+
+empi <- pts %>% 
+  filter(!AVS_indicator & PA_AVS_tot_0115) %>%
+  pull(EMPI) # 165
+
+ric <- unique(lab_epic$RESULT_ITEM_CODE)
+
+ric[grepl()]
+
+lab_epic <- as.tibble(lab_epic)
+lab_epic %>% 
+  filter(EMPI %in% empi) %>%
+  filter(grepl("IVC A", RESULT_ITEM_CODE)) %>%
+  group_by(EMPI, year(ENC_DATE))
+  View() # 47
+
+
+lab_epic %>% 
+  # filter(EMPI %in% empi) %>%
+  filter(grepl("IVC A", RESULT_ITEM_CODE)) %>%
+  group_by(EMPI) # 420
+```
+
+
+
+
+
+
+
+
+
