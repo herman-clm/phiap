@@ -1,5 +1,5 @@
 ---
-title: "Find AVS Labs in Pulled data set"
+title: "Find AVS Labs in EPIC data set"
 output: 
   html_document:
     theme: journal
@@ -31,8 +31,8 @@ source("~/repos/Daniel_Herman_Aldosterone_2017_03/code/R/common_anal/RAR_fxns.R"
 ```
 
 ```{r load_data, include=FALSE, cache=TRUE, cache.lazy=FALSE}
-lab_raw <- load_Lab(dat_file = "/data/raw_data/PA/RAR_v0.2.3/DINGXI_RAR_PTS_LABSC.csv", 
-                    lab_source = "CERNER",
+lab_raw <- load_Lab(dat_file = "/data/raw_data/PA/RAR_v0.2.3/DINGXI_RAR_PTS_LABS.csv", 
+                    lab_source = "PDS_EPIC",
                     left_censor_date = as.Date("1997-01-01"),
                     adjust_up = 1.5, adjust_down = 0.5, logger=NULL)
 
@@ -99,7 +99,7 @@ lab_raw %>%
   summarise(N = n()) %>%
   arrange(desc(N))
 ```
-No "rcort".
+
 
 
 ### "rcort"{-}
@@ -220,17 +220,20 @@ None.
 
 
 # Paired AVS Tests
+Found related AVS Tests: "IVC ALDOSTERONE", "IVC CORTISOL", "LEFT ALDOSTERONE", "LEFT CORTISOL", "RIGHT ALDOSTERONE", "RIGHT CORTISOL", "LCORT", "C LCORT"
+
 ## IVC/Right/Left Aldo
 ```{r aldo_pair}
 lab_raw_no_na %>% 
-  filter(RESULT_ITEM_CODE %in% c("Right Aldos", "Left Aldos", "IVC Aldosterone")) %>%
+  filter(RESULT_ITEM_CODE %in% c("IVC ALDOSTERONE", "IVC CORTISOL", "LEFT ALDOSTERONE")) %>%
   group_by(EMPI_DATE) %>%
   summarise(N = n_distinct(RESULT_ITEM_CODE)) %>% ungroup() %>%
   count(N)
 ```
+
 ```{r nonpaired_aldo, include=FALSE}
 lab_raw_no_na %>% 
-  filter(RESULT_ITEM_CODE %in% c("Right Aldos", "Left Aldos", "IVC Aldosterone")) %>%  
+  filter(RESULT_ITEM_CODE %in% c("IVC ALDOSTERONE", "IVC CORTISOL", "LEFT ALDOSTERONE")) %>%  
   group_by(EMPI_DATE) %>%
   filter(n_distinct(RESULT_ITEM_CODE) < 3)  %>%
   select(EMPI_DATE, RESULT_ITEM_CODE,everything()) %>%
@@ -239,7 +242,7 @@ lab_raw_no_na %>%
 
 
 
-#### chart-review: AVS_lab.txt (1)
+
 
 
 ### At PK_ENCOUNTER_ID Level? {-}
@@ -250,7 +253,7 @@ lab_raw_no_na %>%
   select(EMPI_DATE, RESULT_ITEM_CODE,everything()) %>%
   arrange(PK_ENCOUNTER_ID)
 ```
-This shows that at PK_ENCOUNTER_ID level, a patient could have 3 different Tests associated with 3 different PK_ENCOUNTER_ID in the same day, and the encounter dates are also same.
+none.
 
 ### At EMPI_DATE Level, Duplicate Aldo tests? {-}
 ```{r dup_aldo, include=FALSE}
@@ -262,22 +265,13 @@ lab_raw_no_na %>%
   filter(N != N_dis)  %>%
   arrange(EMPI_DATE)
 ```
-As we could see here, 10 EMPI_DATE's have duplicated Aldo tests.
-```{r dup_aldo_detail, include=FALSE}
-lab_raw_no_na %>% 
-  filter(RESULT_ITEM_CODE %in% c("Right Aldos", "Left Aldos", "IVC Aldosterone")) %>%  
-  group_by(EMPI_DATE) %>%
-  filter(n() > 3)  %>%
-  arrange(EMPI_DATE) %>%
-  select(EMPI_DATE, RESULT_ITEM_CODE, everything())
-```
-So the duplicates could happen for all 3 Aldo tests.
+none.
 
 ## IVC/Right/Left Aldo/Cortisol
 If we remove NA result value, only 6 left:
 ```{r aldo_cortisol_pair_ALL}
 lab_raw_no_na %>% 
-filter(RESULT_ITEM_CODE %in% c("Right Aldos", "Left Aldos", "IVC Aldosterone", "RCORT", "RIGHT CORTISOL", "LCORT", "LEFT CORTISOL","ICORT", "IVC CORTISOL")) %>%  
+filter(RESULT_ITEM_CODE %in% c("IVC ALDOSTERONE", "IVC CORTISOL", "LEFT ALDOSTERONE", "LEFT CORTISOL", "RIGHT ALDOSTERONE", "RIGHT CORTISOL", "LCORT", "C LCORT")) %>%  
   # mutate(RESULT_ITEM_CODE = case_when(RESULT_ITEM_CODE %in% c("RCORT", "RIGHT CORTISOL") ~ "RCORT",
   #                                     RESULT_ITEM_CODE %in% c("LCORT", "LEFT CORTISOL") ~ "LCORT",
   #                                     RESULT_ITEM_CODE %in% c("ICORT", "IVC CORTISOL") ~ "ICORT",
@@ -287,41 +281,33 @@ filter(RESULT_ITEM_CODE %in% c("Right Aldos", "Left Aldos", "IVC Aldosterone", "
 
 
 
-```{r aldo_cortisol_pair}
-lab_raw_no_na %>% 
-filter(RESULT_ITEM_CODE %in% c("Right Aldos", "Left Aldos", "IVC Aldosterone", "RCORT", "RIGHT CORTISOL", "LCORT", "LEFT CORTISOL","ICORT", "IVC CORTISOL")) %>%  
-  mutate(RESULT_ITEM_CODE = case_when(RESULT_ITEM_CODE %in% c("RCORT", "RIGHT CORTISOL") ~ "RCORT",
-                                      RESULT_ITEM_CODE %in% c("LCORT", "LEFT CORTISOL") ~ "LCORT",
-                                      RESULT_ITEM_CODE %in% c("ICORT", "IVC CORTISOL") ~ "ICORT",
-                                      TRUE ~ RESULT_ITEM_CODE)) %>%
-  group_by(EMPI_DATE) %>%
-  summarise(N = n_distinct(RESULT_ITEM_CODE)) %>% ungroup() %>%
-  count(N)
-```
-Most of them have all 6 Tests.
 
 
 ### For IVC/Right/Left Aldo/Cortisol, check their RESULT_RESOURCE, UNIT_OF_MEASURE, and RESULT_STATUS
 ```{r result_status_aldo_cortisol}
 lab_raw_no_na %>% 
-  filter(RESULT_ITEM_CODE %in% c("Right Aldos", "Left Aldos", "IVC Aldosterone", "RCORT", "RIGHT CORTISOL", "LCORT", "LEFT CORTISOL","ICORT", "IVC CORTISOL")) %>%
+  filter(RESULT_ITEM_CODE %in% c("IVC ALDOSTERONE", "IVC CORTISOL", "LEFT ALDOSTERONE", "LEFT CORTISOL", "RIGHT ALDOSTERONE", "RIGHT CORTISOL", "LCORT", "C LCORT")) %>%
   group_by(RESULT_ITEM_CODE, RESULT_RESOURCE, UNIT_OF_MEASURE, LOINC_CODE, RESULT_STATUS) %>%
   summarise(N=n())
 ```
 The LOINC_CODE and RESULT_RESOURCE removed:
 ```{r units_aldo_cortisol_no_loinc}
 lab_raw_no_na %>% 
-  filter(RESULT_ITEM_CODE %in% c("Right Aldos", "Left Aldos", "IVC Aldosterone", "RCORT", "RIGHT CORTISOL", "LCORT", "LEFT CORTISOL","ICORT", "IVC CORTISOL")) %>%
+  filter(RESULT_ITEM_CODE %in% c("IVC ALDOSTERONE", "IVC CORTISOL", "LEFT ALDOSTERONE", "LEFT CORTISOL", "RIGHT ALDOSTERONE", "RIGHT CORTISOL", "LCORT", "C LCORT")) %>%
   group_by(RESULT_ITEM_CODE, UNIT_OF_MEASURE , RESULT_STATUS) %>%
   summarise(N=n())
 ```
 Units are good. 
 ```{r result_status_avs}
 lab_raw_no_na %>% 
-  filter(RESULT_ITEM_CODE %in% c("Right Aldos", "Left Aldos", "IVC Aldosterone", "RCORT", "RIGHT CORTISOL", "LCORT", "LEFT CORTISOL","ICORT", "IVC CORTISOL")) %>%
+  filter(RESULT_ITEM_CODE %in% c("IVC ALDOSTERONE", "IVC CORTISOL", "LEFT ALDOSTERONE", "LEFT CORTISOL", "RIGHT ALDOSTERONE", "RIGHT CORTISOL", "LCORT", "C LCORT")) %>%
   count(RESULT_STATUS)
 ```
-There are new categories for RESULT_STATUS (with arbitrary ordering): Verified > Corrected > Old Verified > Old Corrected > Performed > Old Performed.
+There are new categories for RESULT_STATUS (with arbitrary ordering): Corrected > Final.
+
+
+
+
 
 
 # Urine Aldo [Aldo, Creatinine]

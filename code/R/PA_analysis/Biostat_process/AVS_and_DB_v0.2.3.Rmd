@@ -20,7 +20,7 @@ suppressMessages(library(tidyverse))
 suppressMessages(library(magrittr))
 suppressMessages(library(ini))
 suppressMessages(library(ggplot2))
-
+suppressMessages(library(data.table))
 suppressMessages(library(knitr))
 suppressMessages(library(scales))
 
@@ -40,9 +40,6 @@ For AVS and UAldo indicator, change NA to FALSE. Also add them in enc level:
 ```{r NA_to_F, cache.lazy=FALSE}
 pts[is.na(pts$AVS_indicator), "AVS_indicator"] <- FALSE
 pts[is.na(pts$UAldo_indicator), "UAldo_indicator"] <- FALSE
-
-rar_mg %<>% mutate(AVS_indicator = ifelse(!is.na(`Test_Left_Aldos_ng/dL`) | !is.na(`Test_Right_Aldos_ng/dL`) | !is.na(`Test_IVC_Aldosterone_ng/dL`), TRUE, FALSE), 
-                   UAldo_indicator = ifelse(!is.na(`Test_URINE_ALDOSTERONE_ug/day`), TRUE, FALSE))
 ```
 
 
@@ -118,7 +115,7 @@ pts %>% filter(!AVS_indicator & PA_AVS_tot_0115) %>%
 ```
 
 
-```{r}
+```{r read_raw, include=FALSE, echo=FALSE}
 colClasses_E <- c(ENC_DATE = "PDS_DateTime", ORDER_START_DATE = "PDS_DateTime", O_SOURCE_LAST_UPDATE = "PDS_DateTime", 
                     RESULT_DATE = "PDS_DateTime", 
                     EMPI = 'character', PK_ENCOUNTER_ID = 'character', PK_ORDER_ID = 'character', ORDER_NAME = 'character', 
@@ -143,28 +140,58 @@ lab_cerner <- fread("/data/raw_data/PA/RAR_v0.2.3/DINGXI_RAR_PTS_LABSC.csv", str
 
 empi <- pts %>% 
   filter(!AVS_indicator & PA_AVS_tot_0115) %>%
-  pull(EMPI) # 165
+  pull(EMPI) # 119
 
 ric <- unique(lab_epic$RESULT_ITEM_CODE)
 
-ric[grepl()]
+
 
 lab_epic <- as.tibble(lab_epic)
 lab_epic %>% 
   filter(EMPI %in% empi) %>%
-  filter(grepl("IVC A", RESULT_ITEM_CODE)) %>%
-  group_by(EMPI, year(ENC_DATE))
-  View() # 47
+  filter(RESULT_ITEM_CODE %in% c("IVC ALDOSTERONE", "IVC CORTISOL", "LEFT ALDOSTERONE",
+                                 "LEFT CORTISOL", "RIGHT ALDOSTERONE", "RIGHT CORTISOL")) %>%
+  group_by(EMPI) %>%
+  count(EMPI) # 8
 
 
 lab_epic %>% 
   # filter(EMPI %in% empi) %>%
-  filter(grepl("IVC A", RESULT_ITEM_CODE)) %>%
-  group_by(EMPI) # 420
+  filter(RESULT_ITEM_CODE %in% c("IVC ALDOSTERONE", "IVC CORTISOL", "LEFT ALDOSTERONE",
+                                 "LEFT CORTISOL", "RIGHT ALDOSTERONE", "RIGHT CORTISOL")) %>%
+  group_by(EMPI) %>%
+  count(EMPI) # 441
+
+
+```
+
+What are the distribution of year from EPIC?
+```{r epic}
+lab_epic %>% 
+  filter(EMPI %in% empi) %>%
+  filter(RESULT_ITEM_CODE %in% c("IVC ALDOSTERONE", "IVC CORTISOL", "LEFT ALDOSTERONE",
+                                 "LEFT CORTISOL", "RIGHT ALDOSTERONE", "RIGHT CORTISOL")) %>%
+  group_by(EMPI) %>%
+  summarise(Year = mean(year(ENC_DATE))) %>%
+  count(Year)
 ```
 
 
 
+For those 165 - 54 = 111 patients, why both EPIC and CERNER did not catch them?
+```{r get_pts_not_PDS_EPIC_CERNER, eval=FALSE}
+empi_none <- setdiff(empi, lab_epic %>% 
+  filter(EMPI %in% empi) %>%
+  filter(RESULT_ITEM_CODE %in% c("IVC ALDOSTERONE", "IVC CORTISOL", "LEFT ALDOSTERONE",
+                                 "LEFT CORTISOL", "RIGHT ALDOSTERONE", "RIGHT CORTISOL")) %>%
+  group_by(EMPI) %>%
+  pull(EMPI))
+```
+
+(1) Could they be found in PDS directly?
+Yes, but not for those 6 tests
+(2) Do they show in EPIC?
+Among those chart-reviewed, only found 1 with "AVS" in Progress Note. All of them had no AVS labs; some of them had no labs at all -- are they not our patients?
 
 
 
