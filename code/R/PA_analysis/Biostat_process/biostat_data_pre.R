@@ -156,7 +156,7 @@ rar_mg <- rar_merge(rar_dx = dx_all, rar_enc = rar_enc, rar_lab = lab_all, rar_d
 pts <- enc_to_pts(rar_enc_level = rar_mg, lab_time_window = 14, logger=logger)
 
 
-################    Adding Research Database
+################    Adding Research Database: AVS- total patient list 2001-2015.xlsx
 # read in Research Database
 # read in AVS data
 AVS_pts <- read_excel(path = "/data/raw_data/PA/Debbie_DB/AVS- total patient list 2001-2015.xlsx", 
@@ -208,6 +208,7 @@ if(!is.null(logger)) logger$info(msg)
 
 
 ###########   End of Research Database
+
 
 save(rar_mg, pts, file = paste("PA_analysis/Biostat_process/bios_data_enc_pts_", 
                                dat_version, ".RData", sep=""))
