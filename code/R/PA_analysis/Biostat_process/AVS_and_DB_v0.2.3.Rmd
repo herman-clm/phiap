@@ -194,7 +194,9 @@ Yes, but not for those 6 tests
 Among those chart-reviewed, only found 1 with "AVS" in Progress Note. All of them had no AVS labs; some of them had no labs at all -- are they not our patients?
 
 
-
-
-
+# AVS or RDB
+```{r avs_or_rdb}
+table(pts$AVS_indicator, pts$PA_AVS_tot_0115)
+```
+So from this table, if RDB only, there will be `r sum(pts$PA_AVS_tot_0115)` out of `r nrow(pts)`, `r percent(sum(pts$PA_AVS_tot_0115)/nrow(pts))`. Once we added AVS in, there will be ADDITIONAL `r nrow(pts[(!pts$PA_AVS_tot_0115) & pts$AVS_indicator,])` patients, then the total would be `r nrow(pts[(pts$PA_AVS_tot_0115) | pts$AVS_indicator,])`, `r percent(nrow(pts[(pts$PA_AVS_tot_0115) | pts$AVS_indicator,])/nrow(pts))`.
 
