@@ -1,0 +1,57 @@
+---
+title: "Adding notes to encounter data --v0.2.3"
+output: 
+  html_document:
+    theme: journal
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    fig_width: 15
+    fig_height: 8
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, autodep=TRUE)
+
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, 
+                      message = FALSE)
+
+suppressMessages(library(reshape2))
+suppressMessages(library(lubridate))
+suppressMessages(library(gridExtra))
+
+suppressMessages(library(tidyverse))
+suppressMessages(library(magrittr))
+suppressMessages(library(ini))
+suppressMessages(library(ggplot2))
+suppressMessages(library(kableExtra))
+suppressMessages(library(knitr))
+suppressMessages(library(scales))
+suppressMessages(library(reporttools))
+suppressMessages(library(readxl))
+suppressMessages(library(gtools))
+source("../../common_anal/R_fxns.R")
+
+```
+
+
+```{r load_data, include=FALSE, cache=TRUE, cache.lazy=FALSE}
+load("/data/processed_data/RAR/bios_data_enc_pts_v0.2.3.RData")
+```
+
+
+```{r}
+names(rar_mg)
+```
+
+```{r}
+all_ind <- rar_mg$Aldo > 15 & rar_mg$PRA < 0.5
+```
+
+
+
+
+
+
+

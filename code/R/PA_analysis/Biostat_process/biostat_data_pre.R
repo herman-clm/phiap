@@ -53,6 +53,7 @@ demo_file <- config[[dat_version]]$demo_file
 lab_file_PDS_epic <- config[[dat_version]]$lab_file_PDS_epic
 lab_file_PDS_cerner <- config[[dat_version]]$lab_file_PDS_cerner
 empi_mrn_file <- config[[dat_version]]$empi_mrn_file
+note_file <- config[[dat_version]]$note_file
 
 service_grouping_file = config[[dat_version]]$service_grouping_file
 icd_map_file <- config[[dat_version]]$icd_map_file
@@ -138,16 +139,20 @@ lab_all <- get_RAR_lab_EPIC_CERNER(lab_file_epic = lab_file_PDS_epic, lab_file_c
 
 
 
-save(dx_all, lab_all, rar_demo, rar_enc, file = paste("PA_analysis/Biostat_process/bios_data_",
+## Notes
+notes = fread(file = note_file, header = TRUE)
+
+
+
+save(dx_all, lab_all, rar_demo, rar_enc, notes, file = paste("PA_analysis/Biostat_process/bios_data_",
                                                       dat_version,".RData", sep=""))
-
-
 
 
 # Version 0.2.1.2 RData
 # load("/data/processed_data/RAR/bios_data_v0.2.1.2.RData")
 # Merge all files
-rar_mg <- rar_merge(rar_dx = dx_all, rar_enc = rar_enc, rar_lab = lab_all, rar_demo = rar_demo, 
+rar_mg <- rar_merge(rar_dx = dx_all, rar_enc = rar_enc, rar_lab = lab_all, rar_demo = rar_demo,
+                    rar_note = notes,
                   id = "EMPI_DATE", pt_id = "EMPI", left_censor_date = left_censor_date,
                   join_to_ENC=TRUE, logger=logger)
 
@@ -213,6 +218,17 @@ if(!is.null(logger)) logger$info(msg)
 save(rar_mg, pts, file = paste("PA_analysis/Biostat_process/bios_data_enc_pts_", 
                                dat_version, ".RData", sep=""))
 
+write.csv(rar_mg, 
+          file = paste(output_dir, 
+                       paste(out_root, paste("enc_level_",dat_version, sep=""), "csv", sep="."),
+                       sep="/"),
+          row.names = FALSE)
+write.csv(pts, 
+          file = paste(output_dir, 
+                       paste(out_root,  paste("pt_level_",dat_version, sep=""), "csv", sep="."),
+                       sep="/"),
+          row.names = FALSE)
+
 
 
 
@@ -260,10 +276,6 @@ pt_level %<>% select(-BIRTH_DATE)
 ### reorder columns
 pt_level %<>% select(DE_PT_ID, PA_AVS_tot_0115, everything())
 
-
-
-save(enc_deid, pt_level, file = paste(output_dir, paste(out_root, paste("bios_data_deid_", dat_version, sep=""), "RData", sep="."),
-                                       sep="/"))
 
 
 # Write out resulting datasets

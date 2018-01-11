@@ -1650,7 +1650,7 @@ clean_RAR <- function(dat, blood_only=TRUE){
 }
 
 
-rar_merge <- function(rar_dx, rar_enc, rar_lab, rar_demo, id, pt_id = "EMPI",
+rar_merge <- function(rar_dx, rar_enc, rar_lab, rar_demo, rar_note, id, pt_id = "EMPI",
                       left_censor_date = as.Date("1997-01-01"),
                       join_to_ENC=TRUE, logger = NULL){
   #' This function is used to load in rar_enc,rar_dx, rar_lab, rar_demo data sets and merge them together
@@ -1690,12 +1690,16 @@ rar_merge <- function(rar_dx, rar_enc, rar_lab, rar_demo, id, pt_id = "EMPI",
     rar_mg <- rar_enc %>%
       left_join(., rar_dx, by = id) %>%
       left_join(., rar_lab, by = id) %>%
+      left_join(., rar_note, by = id) %>%
       left_join(., rar_demo, by = pt_id)
+      
   }else{
     rar_mg <- rar_dx %>% 
       full_join(., rar_enc, by = id) %>% 
-      full_join(., rar_lab, by = id) %>% 
+      full_join(., rar_lab, by = id) %>%
+      full_join(., rar_note, by = id) %>%
       full_join(., rar_demo, by = pt_id)
+     
     
     rar_mg$EMPI <- substr(rar_mg$EMPI_DATE, 1, 10)
   }
@@ -1875,6 +1879,7 @@ enc_to_pts <- function(rar_enc_level, sbp_lower_limit = 140, dbp_lower_limit = 9
   
   # Add RAR Age
   pts$rar_age <- as.numeric(difftime(pts$RAR_DATE, pts$BIRTH_DATE, units = "days")/365.25)
+  pts$rar_age <- ifelse(pts$rar_age < 0, 0, pts$rar_age)
   
   # Add a RAR_DATE time stamp into enc
   enc %<>% 
@@ -1990,6 +1995,14 @@ enc_to_pts <- function(rar_enc_level, sbp_lower_limit = 140, dbp_lower_limit = 9
   
   
   
+  # Add Regex Counts and NOTE counts
+  note_cols <- grepl("^re_|NOTE_n", names(enc))
+  note_agg <- enc %>%
+    select(EMPI, names(.)[note_cols]) %>%
+    group_by(EMPI) %>%
+    summarise_all(sum, na.rm=TRUE)
+  
+  pts %<>% full_join(., note_agg, by='EMPI')
   
   
   
