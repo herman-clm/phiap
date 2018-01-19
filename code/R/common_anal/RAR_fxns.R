@@ -1650,7 +1650,8 @@ clean_RAR <- function(dat, blood_only=TRUE){
 }
 
 
-rar_merge <- function(rar_dx, rar_enc, rar_lab, rar_demo, rar_note, id, pt_id = "EMPI",
+rar_merge <- function(rar_dx, rar_enc, rar_lab, rar_demo, rar_note, rar_med, 
+                      id, pt_id = "EMPI",
                       left_censor_date = as.Date("1997-01-01"),
                       join_to_ENC=TRUE, logger = NULL){
   #' This function is used to load in rar_enc,rar_dx, rar_lab, rar_demo data sets and merge them together
@@ -1659,6 +1660,8 @@ rar_merge <- function(rar_dx, rar_enc, rar_lab, rar_demo, rar_note, id, pt_id = 
   #' @param rar_enc tibble Encounter data set
   #' @param rar_lab tibble Lab tests data set
   #' @param rar_demo tibble Patients' demographic data set
+  #' @param rar_note tibble NOTE COUNT_REGEX data set
+  #' @param rar_med tibble MED COUNT data set
   #' @param id character Unique ID to merge the 4 data sets together
   #' @param pt_id character Unique ID for patients. Default is EMPI
   #' @param left_censor_date POSIXct Left censoring date. Default is 1997-01-01
@@ -1691,6 +1694,7 @@ rar_merge <- function(rar_dx, rar_enc, rar_lab, rar_demo, rar_note, id, pt_id = 
       left_join(., rar_dx, by = id) %>%
       left_join(., rar_lab, by = id) %>%
       left_join(., rar_note, by = id) %>%
+      left_join(., rar_med, by = id) %>%
       left_join(., rar_demo, by = pt_id)
       
   }else{
@@ -1698,6 +1702,7 @@ rar_merge <- function(rar_dx, rar_enc, rar_lab, rar_demo, rar_note, id, pt_id = 
       full_join(., rar_enc, by = id) %>% 
       full_join(., rar_lab, by = id) %>%
       full_join(., rar_note, by = id) %>%
+      full_join(., rar_med, by = id) %>%
       full_join(., rar_demo, by = pt_id)
      
     
@@ -2004,7 +2009,14 @@ enc_to_pts <- function(rar_enc_level, sbp_lower_limit = 140, dbp_lower_limit = 9
   
   pts %<>% full_join(., note_agg, by='EMPI')
   
+  # Add MED Counts
+  med_cols <- grepl("^MED_", names(enc))
+  med_agg <- enc %>%
+    select(EMPI, names(.)[med_cols]) %>%
+    group_by(EMPI) %>%
+    summarise_all(sum, na.rm=TRUE)
   
+  pts %<>% full_join(., med_agg, by='EMPI')
   
   # Add SBP/DBP
   ## select bp closest to RAR_DATE & within day window (default is 14 days)

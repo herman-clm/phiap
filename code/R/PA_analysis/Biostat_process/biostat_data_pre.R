@@ -54,6 +54,7 @@ lab_file_PDS_epic <- config[[dat_version]]$lab_file_PDS_epic
 lab_file_PDS_cerner <- config[[dat_version]]$lab_file_PDS_cerner
 empi_mrn_file <- config[[dat_version]]$empi_mrn_file
 note_file <- config[[dat_version]]$note_file
+med_file <- config[[dat_version]]$med_file
 
 service_grouping_file = config[[dat_version]]$service_grouping_file
 icd_map_file <- config[[dat_version]]$icd_map_file
@@ -141,10 +142,14 @@ lab_all <- get_RAR_lab_EPIC_CERNER(lab_file_epic = lab_file_PDS_epic, lab_file_c
 
 ## Notes
 notes = fread(file = note_file, header = TRUE)
+notes = as.tibble(notes)
 
+## MEDS
+meds = fread(file = med_file, header = TRUE)
+meds = as.tibble(meds)
 
-
-save(dx_all, lab_all, rar_demo, rar_enc, notes, file = paste("PA_analysis/Biostat_process/bios_data_",
+save(dx_all, lab_all, rar_demo, rar_enc, notes, meds,
+     file = paste("PA_analysis/Biostat_process/bios_data_",
                                                       dat_version,".RData", sep=""))
 
 
@@ -152,7 +157,7 @@ save(dx_all, lab_all, rar_demo, rar_enc, notes, file = paste("PA_analysis/Biosta
 # load("/data/processed_data/RAR/bios_data_v0.2.1.2.RData")
 # Merge all files
 rar_mg <- rar_merge(rar_dx = dx_all, rar_enc = rar_enc, rar_lab = lab_all, rar_demo = rar_demo,
-                    rar_note = notes,
+                    rar_note = notes, rar_med = meds,
                   id = "EMPI_DATE", pt_id = "EMPI", left_censor_date = left_censor_date,
                   join_to_ENC=TRUE, logger=logger)
 
