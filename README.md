@@ -149,6 +149,20 @@ Primary aldosteronism or PA is a hormonal disorder that leads to high blood pres
 *edited on 09/28/17*
 The project is in cooperation with people from Biostatistics Department, focusing on phenotyping EHR through likelihood approach. There are de-identified data sets on two levels: Encounter Level (EMPI_DATE for now), and Patient Level. The versions of the data sets are listed below:
 
+## Processing Step
+### ini
+1. modify `config_template.ini` file in `code/R/PA_analysis/Biostat_process/`, set a seed
+2. rename it as `config.ini`
+
+### Query
+1.  run SQL file `ar.sql` in `code/sql`
+2. output individual result tables into files, put them in location corresponding to `config.ini` file above
+
+### Cleaning
+1. run file `biostat_data_pre.R` in `code/R/PA_analysis/Biostat_process/`
+
+
+
 ### Version 0.1
 This is the first version, and was shared on 08/23/17.
 
@@ -285,6 +299,7 @@ After removing NA RESULT_VALUE, these 6 RESULT_ITEM_CODE and ORDER_ITEM_CODE:
 | RIGHT CORTISOL SAMPLE | C3500680        | excluded using non-NA |
 
 Function `clean_lab` in RAR_fxn.R was renamed as `lab_select`, which better reflects its usage. Also made generalized functions to load and clean labs.
+
 
 # References
 * MedEx:
