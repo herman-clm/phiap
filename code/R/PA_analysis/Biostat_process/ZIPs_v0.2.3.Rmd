@@ -27,7 +27,7 @@ suppressMessages(library(ggmap))
 # suppressMessages(library(reporttools))
 # suppressMessages(library(readxl))
 # suppressMessages(library(gtools))
-source("~/repos/Daniel_Herman_Aldosterone_2017_03/code/R/common_anal/RAR_fxns.R", chdir = TRUE)
+source("../../common_anal/RAR_fxns.R", chdir = TRUE)
 
 ```
 

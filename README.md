@@ -151,7 +151,9 @@ The project is in cooperation with people from Biostatistics Department, focusin
 
 ## Processing Step
 ### ini
-1. modify `config_template.ini` file in `code/R/PA_analysis/Biostat_process/`, set a seed
+1. modify `config_template.ini` file in `code/R/PA_analysis/Biostat_process/`:
+  - repos_dir
+  - seed
 2. rename it as `config.ini`
 
 ### Query

@@ -15,12 +15,15 @@ suppressPackageStartupMessages(library(logging, quietly = TRUE))
 
 
 # read in config file
-config <- read.ini("~/repos/Daniel_Herman_Aldosterone_2017_03/code/R/PA_analysis/Biostat_process/config.ini")
+config <- read.ini("config.ini")
 
 # set directory
 working_dir <- paste(config$Directories$repos_dir, config$Directories$working_dir_suffix, sep = "/")
 
 output_dir <- paste(config$Directories$repos_dir, config$Directories$output_dir_suffix, sep = "/")
+if(!dir.exists(output_dir)){
+  dir.create(output_dir, recursive = TRUE)
+}
 out_root <- config$RAR$out_root
 
 # set working directory
