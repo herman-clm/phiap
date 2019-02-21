@@ -1,0 +1,71 @@
+FROM rocker/tidyverse:3.4.1
+MAINTAINER Daniel Herman <daniel.herman2@uphs.upenn.edu>
+
+# Clean up users
+# RUN groupadd -g 1004 pa
+# RUN useradd --create-home --shell /bin/bash -u 1003 --gid pa --groups sudo -p $(openssl passwd -1 PL3@5ecH@nG3) hermanda
+RUN deluser rstudio
+
+RUN apt-get update -qq && \
+    apt-get -y install \
+        nano \
+        libpam-pwquality \
+        curl \
+        bzip2 \
+        git
+
+# Setup password requirements
+RUN sed -i '25s/.*/password\trequisite\t\t\tpam_pwquality.so retry=3 difok=1 minlen=9 ucredit=-1 lcredit=-1 dcredit=-1 ocredit=-1 enforce_for_root/' /etc/pam.d/common-password
+
+# need to specify versions for libs
+RUN install2.r --error \
+    --deps FALSE \
+    logging \
+    cowplot \
+    kableExtra \
+    ini \
+    reporttools \
+    gtools \
+    geosphere \
+    proto \
+    findpython \
+    getopt \
+    rjson \
+    argparse \
+    randomForest \
+    glmnet \
+    corrplot
+
+RUN install2.r --error \
+    --deps TRUE \
+    ROCR \
+    e1071
+
+RUN apt-get install -y locales locales-all
+# Not essential, but wise to set the lang
+# Note: Users with other languages should set this in their derivative image
+ENV LANGUAGE en_US.UTF-8
+ENV LANG en_US.UTF-8
+ENV LC_ALL en_US.UTF-8
+ENV PYTHONIOENCODING UTF-8
+
+# Install gpg
+RUN mkdir /gpg_tmp && \
+    cd /gpg_tmp && \
+    curl -O https://www.gnupg.org/ftp/gcrypt/gnupg/gnupg-1.4.22.tar.bz2 && \
+    tar xvjf gnupg-1.4.22.tar.bz2 && \
+    cd gnupg-1.4.22 && \
+    ./configure && \
+    make && \
+    make install && \
+    cd / && \
+    rm -rf gpg_tmp
+
+
+# Install ggmap
+RUN apt-get install -y libjpeg-dev
+RUN install2.r --error \
+    --deps TRUE \
+    ggmap
+
+
