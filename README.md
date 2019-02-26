@@ -49,27 +49,32 @@ Change password for user:
 ```
 
 ### ini
-1. modify `code/R/PA_analysis/Biostat_process/config_template.ini`:
+1. modify `R/PA_analysis/Biostat_process/config_template.ini`:
   - repos_dir
   - seed
 2. rename it as `config.ini`
 
 ## Create EHR dataset
 1.  Create Cohort
-In PDS, execute SQL in `code/sql/RAR_All_Pts.sql`. This will create a table, `rar_full_pts`, containing all patients eligible for the study.
+In PDS, execute SQL in `sql/RAR_All_Pts.sql`. This will create a table, `rar_full_pts`, containing all patients eligible for the study.
 2. Individual Data Tables
-   - In PDS, execute `code/sql/extract_rar_data.sql` to create separate tables for encounters, diagnosis, lab tests, medications, and clinical notes. These tables should be outputed and stored in in location corresponding to `config.ini` file above.
+   - In PDS, execute `sql/extract_rar_data.sql` to create separate tables for encounters, diagnosis, lab tests, medications, and clinical notes. These tables should be outputed and stored in in location corresponding to `config.ini` file above.
    - Some code for processing notes and medications is in the separate EHR_Transform repos
 	 - http://bic.med.upenn.edu/hermanlab/EHR_transform/tree/289c346c5166fa93602ae90cd24cd43dcd303f88
 	 - Code to extract, clean and search notes from PennChart is part of the separate EHR_Transform repos
 	 - Code to clean and collapse medications to the patient-date level
-3. Run `code/R/biostat_data_pre.R`
+3. Run `R/biostat_data_pre.R`
 
 ## Perform postive-only model fitting
-1. Usage instructions:
-``
 
-``
+1. Usage instructions:
+```
+	res <- LZ_c_solnp_r(<df>,
+		iter = 1000,
+		tol = 1e-8,
+		v = c(0.2, 0.3, 0.4, 0.5),
+		vv = seq(0, 1, 0.1))
+```
 
 ## IRB Compliance
 University of Pennsylvania IRB #827260
