@@ -1,0 +1,1510 @@
+---
+title: "Descriptive Statistics on v0.2.3 Bios Data"
+output: 
+  html_document:
+    theme: journal
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    fig_width: 15
+    fig_height: 8
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, autodep=TRUE)
+
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, 
+                      message = FALSE)
+
+suppressMessages(library(reshape2))
+suppressMessages(library(lubridate))
+suppressMessages(library(gridExtra))
+
+suppressMessages(library(tidyverse))
+suppressMessages(library(magrittr))
+suppressMessages(library(ini))
+suppressMessages(library(ggplot2))
+suppressMessages(library(kableExtra))
+suppressMessages(library(knitr))
+suppressMessages(library(scales))
+suppressMessages(library(reporttools))
+suppressMessages(library(readxl))
+suppressMessages(library(gtools))
+source("../common_anal/R_fxns.R")
+
+```
+
+
+```{r load_data, include=FALSE, cache=TRUE, cache.lazy=FALSE}
+load("/data/processed_data/RAR/bios_data_enc_pts_v0.2.3.RData")
+```
+
+
+# Aim 1
+## Inclusion/Exclusion Criteria
+Inclusion criteria: Aldo/Renin Test, Primary Aldo Dx, in RDB. According to this criteria, select out our cohort.
+
+
+
+## Dx's
+### Dx Basic
+#### How many patients have >1 PA Dx's? {-}
+In this v0.2.3 data, there are `r length(unique(pts$EMPI))` patients. The data is left censored, with a time cut-point of 1997-01-01. 
+```{r pa_dx}
+pa_dx_EMPI <- pts[which(pts$Dx_h1_Primary_aldosteronism_n >= 2), "EMPI"]
+pa_dx_pts <- pts %>% filter(EMPI %in% pa_dx_EMPI$EMPI)
+not_pa_dx_pts <- pts %>% filter(!(EMPI %in% pa_dx_EMPI$EMPI))
+```
+There are `r nrow(pa_dx_EMPI)` patients with more than 1 Primary Aldosteronism Dx in h1 level (Dx_h1_Primary_aldosteronism_n).   
+
+#### In general, what is the distribution of PA Dx's? {-}
+In `r length(unique(pts$EMPI))` patients, `r sum(pts$Dx_h1_Primary_aldosteronism_n != 0)` of them have PA Dx's. For those patients with PA Dx:
+```{r dist_PA_dx}
+pts %>% filter(Dx_h1_Primary_aldosteronism_n != 0) %>%
+  select(Dx_h1_Primary_aldosteronism_n) %>%
+  group_by(Dx_h1_Primary_aldosteronism_n) %>%
+  summarise(N=n()) %>%
+  ggplot(.) + geom_bar(aes(x=Dx_h1_Primary_aldosteronism_n, y=N), stat="identity")
+```
+Here is the summary for PA Dx in all patients and patients with PA Dx:
+```{r sum_PA_dx}
+summary(pts$Dx_h1_Primary_aldosteronism_n)
+summary(pts %>% filter(Dx_h1_Primary_aldosteronism_n != 0) %>% select(Dx_h1_Primary_aldosteronism_n))
+```
+Use 8 as a Dx cut point: patients with more than 8 PA Dx are group together   
+
+
+
+#### Using 14 (arbitrary) of PA Dx, descriptives between groups {-}
+```{r new_dx_cut}
+pts$PA_Dx <- ifelse(pts$Dx_h1_Primary_aldosteronism_n > 14, "14+", pts$Dx_h1_Primary_aldosteronism_n)
+pts$PA_Dx <- factor(pts$PA_Dx, levels = mixedsort(unique(pts$PA_Dx)))
+```
+First, a brief descriptives on some variables:
+```{r pa_dx_descriptives}
+# numerics
+num_var <- c("time_in_sys_yr", "time_enc_to_1st_hyperaldo_dx_yr", "time_enc_to_1st_RAR_yr",
+             "time_enc_after_1st_RAR_yr", "time_enc_after_1st_hyperaldo_dx_yr",
+             "time_bp_to_1st_RAR_yr", "time_bp_to_1st_hyperaldo_dx_yr", "time_bp_after_1st_RAR_yr", "time_bp_after_1st_hyperaldo_dx_yr", "time_enc_to_1st_AVS_yr", "time_enc_after_1st_AVS_yr", "time_bp_to_1st_AVS_yr", "time_bp_after_1st_AVS_yr","high_BP_n", "high_BP_prop", "enc_n", 'enc_bp_n', 'high_BP_n', 'high_BP_prop', 'Aldo', "PRA", "DRC", "RAR_tests_n", "dbp", "sbp", "Test_POTASSIUM_mmol/L", "Dx_n", "Dx_h1_Primary_aldosteronism_n", "Dx_h1_Other_hyperaldo_n", "Dx_h1_Essential_HTN_n", "Dx_h1_Secondary_HTN_n", "Dx_h1_Obstructive_Sleep_Apnea_n", "Dx_h1_Other_Sleep_Apnea_n")
+
+pts %>% group_by(PA_Dx) %>%
+  mutate(N=n()) %>%
+  summarise_at(vars(N, num_var), funs(median=median(., na.rm=T)))
+
+# categoricals
+pts %>% group_by(PA_Dx) %>%
+  summarise(Gender_F = percent(sum(GENDER_MASTER_CODE =='F',na.rm=T)/n()), 
+            RACE_Black = percent(sum(RACE_MASTER_CODE =='BLACK',na.rm=T)/n()),
+            RACE_White = percent(sum(RACE_MASTER_CODE =='WHITE',na.rm=T)/n()), 
+            Primary_ENTITY_CPUP = percent(sum(pri_entity =='CPUP',na.rm=T)/n()),
+            Primary_ENTITY_CCA = percent(sum(pri_entity =='CCA',na.rm=T)/n()),
+            Primary_Loc_RENAL_PERELMAN = percent(sum(pri_loc =='RENAL PERELMAN',na.rm=T)/n()),
+            RAR_ENTITY_CPUP = percent(sum(rar_entity =='CPUP',na.rm=T)/n()),
+            RAR_ENTITY_CCA = percent(sum(rar_entity =='CCA',na.rm=T)/n()),
+            RAR_Loc_RENAL_PERELMAN = percent(sum(rar_loc =='RENAL PERELMAN',na.rm=T)/n())
+            )
+```
+
+What about their distribution?
+```{r pa_dx_tis_dist}
+cc <- seq_gradient_pal("black", "red")(seq(0,1,length.out = 10))
+pts %>% 
+  filter(PA_Dx %in% c('2','3','4','5')) %>%
+  ggplot(.) + geom_density(aes(time_in_sys_yr, group=PA_Dx, linetype=PA_Dx, color=PA_Dx)) + scale_color_manual(values=cc)
+```
+
+
+#### Using 0,1,2,3-5,6-9,9+ as PA Dx groupings {-}
+Another way of grouping:
+```{r new_6_grouping}
+pts$PA_Dx <- case_when(pts$Dx_h1_Primary_aldosteronism_n == 0 ~ "0",
+                       pts$Dx_h1_Primary_aldosteronism_n == 1 ~ "1",
+                       pts$Dx_h1_Primary_aldosteronism_n == 2 ~ "2",
+                       pts$Dx_h1_Primary_aldosteronism_n %in% c("3","4","5") ~ "3-5",
+                       pts$Dx_h1_Primary_aldosteronism_n %in% c("6","7","8", "9") ~ "6-9",
+                       TRUE ~ "9+")
+```
+Basic descriptives on new grouping
+```{r pa_dx_descriptives_new}
+
+
+median_quantile <- function(x){
+  q1 = quantile(x, 0.25, na.rm=TRUE)
+  q2 = quantile(x, 0.5, na.rm=TRUE)
+  q3 = quantile(x, 0.75, na.rm=TRUE)
+  missing_n = sum(is.na(x))
+  ret <- sprintf("%.3f (%.3f ~ %.3f) [Missing: %d]", q2, q1, q3, missing_n)
+  return(ret)
+}
+
+pts %>% group_by(PA_Dx) %>%
+  mutate(N=n()) %>%
+  summarise_at(vars(N, num_var), funs(median=median_quantile(.)))
+
+temp <- pts[,c('PA_Dx', 'time_in_sys_yr')]
+pairwise.wilcox.test(temp, 'PA_Dx')
+
+# categoricals
+pts %>% group_by(PA_Dx) %>%
+  summarise(Gender_F = percent(sum(GENDER_MASTER_CODE =='F',na.rm=T)/n()), 
+            RACE_Black = percent(sum(RACE_MASTER_CODE =='BLACK',na.rm=T)/n()),
+            RACE_White = percent(sum(RACE_MASTER_CODE =='WHITE',na.rm=T)/n()), 
+            Primary_ENTITY_CPUP = percent(sum(pri_entity =='CPUP',na.rm=T)/n()),
+            Primary_ENTITY_CCA = percent(sum(pri_entity =='CCA',na.rm=T)/n()),
+            Primary_Loc_RENAL_PERELMAN = percent(sum(pri_loc =='RENAL PERELMAN',na.rm=T)/n()),
+            RAR_ENTITY_CPUP = percent(sum(rar_entity =='CPUP',na.rm=T)/n()),
+            RAR_ENTITY_CCA = percent(sum(rar_entity =='CCA',na.rm=T)/n()),
+            RAR_Loc_RENAL_PERELMAN = percent(sum(rar_loc =='RENAL PERELMAN',na.rm=T)/n())
+            )
+```
+
+
+Plots:   
+##### Time in system? {-}
+```{r pa_dx_time_in_sys}
+pts %>% ggplot(.) + geom_boxplot(aes(x=PA_Dx, y = time_in_sys_yr))
+```
+A big decrease in group 2.   
+```{r pa_dx_tis_dist_new_grp}
+cc <- seq_gradient_pal("black", "red")(seq(0,1,length.out = 10))
+pts %>% 
+  ggplot(.) + geom_density(aes(time_in_sys_yr, group=PA_Dx, linetype=PA_Dx, color=PA_Dx),size=1) + scale_color_manual(values=cc)
+```
+
+```{r pa_dx_tis_dist_new_grp_2, fig.width=6,fig.height=15}
+cc <- seq_gradient_pal("black", "red")(seq(0,1,length.out = 10))
+g <- pts %>% 
+  ggplot(.)
+g <- g + geom_density(aes(time_in_sys_yr))
+g <- g + facet_wrap(~ PA_Dx, scales = "free_y", ncol = 1)
+g
+```
+
+##### Time to 1st RAR {-}
+```{r pa_dx_time_to_1st_RAR}
+pts %>% ggplot(.) + geom_boxplot(aes(x=PA_Dx, y = time_enc_to_1st_RAR_yr))
+```
+
+
+
+##### Time to 1st Hyperaldo Dx {-}
+```{r pa_dx_time_to_1st_hyperaldo_Dx}
+pts %>% ggplot(.) + geom_boxplot(aes(x=PA_Dx, y = time_enc_to_1st_hyperaldo_dx_yr))
+```
+
+
+##### Gender? {-}
+```{r pa_dx_gender}
+pts %>% select(PA_Dx, GENDER_MASTER_CODE) %>%
+  group_by(PA_Dx, GENDER_MASTER_CODE) %>%
+  summarise(N=n()) %>% ungroup() %>%
+  group_by(PA_Dx) %>%
+  mutate(percentage=N/sum(N)) %>%
+  ggplot(.) + geom_bar(aes(x=PA_Dx, y=percentage, fill=GENDER_MASTER_CODE), stat="identity") +
+  labs(y="Percentage")
+```
+```{r pa_dx_gender_rm0}
+pts %>% select(PA_Dx, GENDER_MASTER_CODE) %>%
+  filter(PA_Dx != "0") %>%
+  ggplot(.) + geom_bar(aes(PA_Dx,fill=GENDER_MASTER_CODE), position='dodge')
+```
+For group with 2 PA Dx's, females are more than males. In other groups, females are fewer than males.   
+
+##### Race? {-}
+```{r pa_dx_race}
+pts %>% select(PA_Dx, RACE_MASTER_CODE) %>%
+  group_by(PA_Dx, RACE_MASTER_CODE) %>%
+  summarise(N=n()) %>%
+  ggplot(.) + geom_bar(aes(x=PA_Dx, y=N,fill=RACE_MASTER_CODE), position=position_fill(), stat="identity") + labs(y="Percentage")
+```
+
+
+```{r pa_dx_race_rm0}
+pts %>% select(PA_Dx, RACE_MASTER_CODE) %>%
+  filter(PA_Dx != "0") %>%
+  ggplot(.) + geom_bar(aes(PA_Dx,fill=RACE_MASTER_CODE), position="dodge")
+```
+
+##### Encounter with BP number? {-}
+```{r pa_dx_enc_bp_n}
+pts %>% ggplot(.) + geom_boxplot(aes(x=PA_Dx, y = enc_bp_n))
+```
+```{r pa_dx_enc_bp_n_rm0}
+pts %>% 
+  filter(PA_Dx != "0") %>%
+  ggplot(.) + geom_boxplot(aes(x=PA_Dx, y = enc_bp_n))
+```
+
+##### High BP? {-}
+High BP number:
+```{r pa_dx_high_bp_n}
+pts %>% 
+  filter(PA_Dx != "0") %>%
+  ggplot(.) + geom_boxplot(aes(x=PA_Dx, y = high_BP_n)) + scale_y_log10() + labs(y = "log(high BP n)")
+```
+There's no big difference between groups in high BP number.
+High BP proportion:
+```{r pa_dx_high_bp_prop}
+pts %>% 
+  filter(PA_Dx != "0") %>%
+  ggplot(.) + geom_boxplot(aes(x=PA_Dx, y = high_BP_prop))
+```
+
+##### Primary ENTITY {-}
+```{r pa_dx_pri_entity}
+pts %>% select(PA_Dx, pri_entity) %>%
+  # filter(PA_Dx != "0") %>%
+  group_by(PA_Dx, pri_entity) %>%
+  summarise(N=n()) %>%
+  ggplot(.) + geom_bar(aes(x=PA_Dx, y=N, fill=pri_entity), position=position_fill(), stat='identity')
+```
+
+
+##### RAR Test Results {-}
+```{r pa_dx_Aldo}
+pts %>% 
+  ggplot(.) + geom_boxplot(aes(x=PA_Dx, y = Aldo)) +
+  geom_hline(yintercept = 15, linetype=2, color=2) + 
+  scale_y_log10() + labs(y="log(Aldo)")
+```
+```{r pa_dx_PRA}
+pts %>% 
+  ggplot(.) + geom_boxplot(aes(x=PA_Dx, y = PRA)) + 
+  geom_hline(yintercept = 0.5, linetype=2, color=2) +
+  scale_y_log10() + labs(y="log(PRA)")
+```
+
+The DRC for group 1 & 2 are not so accurate, since there are only 2 and 3 DRC's in these groups.   
+For Aldo/PRA:
+```{r pa_dx_rar_ratio}
+pts %>% 
+  ggplot(.) + geom_boxplot(aes(x=PA_Dx, y = Aldo/PRA)) + 
+  geom_hline(yintercept = 30, linetype=2, color=2) + 
+  scale_y_log10() + 
+  labs(y="log(Aldo/PRA)")
+```
+For Aldo/PRA ratio, grouping by RDB:
+```{r pa_dx_rar_ratio_RDB}
+pts %>% 
+  ggplot(.) + geom_boxplot(aes(x=PA_Dx, y = Aldo/PRA, fill=PA_AVS_tot_0115)) + 
+  geom_hline(yintercept = 30, linetype=2, color=2) + 
+  scale_y_log10() + 
+  labs(y="log(Aldo/PRA)")
+```
+##### Potassium {-}
+```{r pa_dx_Potassium}
+pts %>% ggplot(.) +
+  geom_boxplot(aes(x=PA_Dx, y = pts$`Test_POTASSIUM_mmol/L`)) 
+```
+As for the IQR's, there is no big difference.
+
+##### BP's associated with RAR
+```{r pa_dx_sbp}
+pts %>% ggplot(.) +
+  geom_boxplot(aes(x=PA_Dx, y = sbp)) + 
+  geom_hline(yintercept = 140, linetype=2, color=2)
+```
+```{r pa_dx_dbp}
+pts %>% ggplot(.) +
+  geom_boxplot(aes(x=PA_Dx, y = dbp))  + 
+  geom_hline(yintercept = 90, linetype=2, color=2)
+```
+
+##### Number of all Dx's
+```{r pa_dx_All_Dx}
+pts %>% ggplot(.) +
+  geom_boxplot(aes(x=PA_Dx, y = Dx_n)) + scale_y_log10()
+```
+
+#### Integrate with RAR Tests
+```{r with_RAR_strict}
+pts %>% group_by(EMPI) %>%
+  mutate(RAR_Strict = factor(true_false_NA(Aldo, PRA, "RAR_Strict"), levels=c(T,F))) %>% ungroup() %>%
+  select(RAR_Strict, PA_Dx) %>%
+  table(., useNA="always")
+```
+If we apply PA Dx >= 2 as criteria, we could get several tables based on different RAR criteria:   
+
+##### RAR Strict Criteria {-}
+```{r with_RAR_strict_PA_criteria, echo=FALSE}
+pts %>% group_by(EMPI) %>%
+  mutate(RAR_Strict = factor(true_false_NA(Aldo, PRA, "RAR_Strict"), levels=c(T,F)), 
+         PA_Dx_C = factor(Dx_h1_Primary_aldosteronism_n >= 2, levels=c(TRUE, FALSE))) %>% ungroup() %>%
+  select(RAR_Strict, PA_Dx) %>%
+  table(., useNA="always")
+
+```
+
+```{r with_RAR_strict_PA_criteria_PPV, echo=FALSE}
+pts %>% group_by(EMPI) %>%
+  mutate(RAR_Strict = factor(true_false_NA(Aldo, PRA, "RAR_Strict"), levels=c(T,F)), 
+         PA_Dx_C = factor(Dx_h1_Primary_aldosteronism_n >= 2, levels=c(TRUE, FALSE))) %>% ungroup() %>%
+  select(RAR_Strict, PA_Dx) %>%
+  table(., useNA="always") %>%
+  prop.table(., margin=1)
+```
+
+Apply RAR Strict criteria on encounter level:
+```{r with_RAR_strict_PA_criteria_enc, echo=FALSE}
+rar_mg %>% group_by(EMPI) %>%
+  summarise(RAR_Strict_criteria = factor(true_false_NA(Aldo, PRA, "RAR_Strict"), levels=c(TRUE, FALSE)),
+            PA_Dx_C = factor(sum(Dx_h1_Primary_aldosteronism, na.rm=TRUE) >= 2, levels=c(TRUE, FALSE))) %>%
+  select(PA_Dx_C, RAR_Strict_criteria) %>%
+  table(., useNA="always")
+
+```
+
+```{r with_RAR_strict_PA_criteria_enc_PPV, echo=FALSE}
+rar_mg %>% group_by(EMPI) %>%
+  summarise(RAR_Strict_criteria = factor(true_false_NA(Aldo, PRA, "RAR_Strict"), levels=c(TRUE, FALSE)),
+            PA_Dx_C = factor(sum(Dx_h1_Primary_aldosteronism, na.rm=TRUE) >= 2, levels=c(TRUE, FALSE))) %>%
+  select(PA_Dx_C, RAR_Strict_criteria) %>%
+  table(., useNA="always") %>%
+  prop.table(., margin=1)
+```
+
+```{r with_RAR_strict_PA_criteria_enc_sensitivity, echo=FALSE}
+rar_mg %>% group_by(EMPI) %>%
+  summarise(RAR_Strict_criteria = factor(true_false_NA(Aldo, PRA, "RAR_Strict"), levels=c(TRUE, FALSE)),
+            PA_Dx_C = factor(sum(Dx_h1_Primary_aldosteronism, na.rm=TRUE) >= 2, levels=c(TRUE, FALSE))) %>%
+  select(PA_Dx_C, RAR_Strict_criteria) %>%
+  table(., useNA="always") %>%
+  prop.table(., margin=2)
+```
+
+
+```{r with_RAR_strict_PA_criteria_Venn}
+VennDiagram::draw.pairwise.venn(area1=203+298, area2=203+144+278, cross.area = 203, 
+                                category=c("RAR Strict Criteria", "PA_Dx >= 2"),
+                                fill = c("light blue", "pink"), alpha = rep(0.5, 2), 
+                                cat.pos = c(0, 0), cat.dist = rep(0.025, 2))
+```
+
+
+##### RAR PRA Criteria {-}
+```{r with_RAR_PRA, echo=FALSE}
+rar_mg %>% group_by(EMPI) %>%
+  summarise(RAR_PRA_criteria = factor(true_false_NA(Aldo, PRA, "RAR_PRA"), levels=c(TRUE, FALSE)),
+            PA_Dx_C = factor(sum(Dx_h1_Primary_aldosteronism, na.rm=TRUE) >= 2, levels=c(TRUE, FALSE))) %>%
+  select(PA_Dx_C, RAR_PRA_criteria) %>%
+  table(., useNA="always")
+
+```
+
+##### RAR Aldo Criteria {-}
+```{r with_RAR_Aldo, echo=FALSE}
+rar_mg %>% group_by(EMPI) %>%
+  summarise(RAR_Aldo_criteria = factor(true_false_NA(Aldo, PRA, "RAR_Aldo"), levels=c(TRUE, FALSE)),
+            PA_Dx_C = factor(sum(Dx_h1_Primary_aldosteronism, na.rm=TRUE) >= 2, levels=c(TRUE, FALSE))) %>%
+  select(PA_Dx_C, RAR_Aldo_criteria) %>%
+  table(., useNA="always")
+```
+
+##### RAR Lax Criteria {-}
+```{r with_RAR_Lax, echo=FALSE}
+lax <- rar_mg %>% group_by(EMPI) %>%
+  summarise(RAR_Lax_criteria = factor(true_false_NA(Aldo, PRA, "RAR_Lax"), levels=c(TRUE, FALSE)),
+            PA_Dx_C = factor(sum(Dx_h1_Primary_aldosteronism, na.rm=TRUE) >= 2, levels=c(TRUE, FALSE))) %>%
+  select(PA_Dx_C, RAR_Lax_criteria) %>%
+  table(., useNA="always")
+lax
+```
+
+```{r with_RAR_Lax_ppv, echo=FALSE}
+rar_mg %>% group_by(EMPI) %>%
+  summarise(RAR_Lax_criteria = factor(true_false_NA(Aldo, PRA, "RAR_Lax"), levels=c(TRUE, FALSE)),
+            PA_Dx_C = factor(sum(Dx_h1_Primary_aldosteronism, na.rm=TRUE) >= 2, levels=c(TRUE, FALSE))) %>%
+  select(PA_Dx_C, RAR_Lax_criteria) %>%
+  table(., useNA="always") %>%
+  prop.table(., margin=1)
+```
+
+```{r with_RAR_Lax_sensitivity, echo=FALSE}
+rar_mg %>% group_by(EMPI) %>%
+  summarise(RAR_Lax_criteria = factor(true_false_NA(Aldo, PRA, "RAR_Lax"), levels=c(TRUE, FALSE)),
+            PA_Dx_C = factor(sum(Dx_h1_Primary_aldosteronism, na.rm=TRUE) >= 2, levels=c(TRUE, FALSE))) %>%
+  select(PA_Dx_C, RAR_Lax_criteria) %>%
+  table(., useNA="always") %>%
+  prop.table(., margin=2)
+```
+
+##### Changing RAR Lab Criteria, PA_Dx Criteria {-}
+
+```{r foo, echo=FALSE}
+foo <- function(dat, PA_Dx_C){
+  
+  dat %<>% select(EMPI, Aldo, PRA, Dx_h1_Primary_aldosteronism)
+  
+  strict <- dat %>% group_by(EMPI) %>%
+  summarise(RAR_Strict_criteria = factor(true_false_NA(Aldo, PRA, "RAR_Strict"), levels=c(TRUE, FALSE)),
+            PA_Dx_C = factor(sum(Dx_h1_Primary_aldosteronism, na.rm=TRUE) >= PA_Dx_C, levels=c(TRUE, FALSE))) %>%
+  select(PA_Dx_C, RAR_Strict_criteria) %>%
+  table()
+  
+  
+  pra <- dat %>% group_by(EMPI) %>%
+  summarise(RAR_PRA_criteria = factor(true_false_NA(Aldo, PRA, "RAR_PRA"), levels=c(TRUE, FALSE)),
+            PA_Dx_C = factor(sum(Dx_h1_Primary_aldosteronism, na.rm=TRUE) >= PA_Dx_C, levels=c(TRUE, FALSE))) %>%
+  select(PA_Dx_C, RAR_PRA_criteria) %>%
+  table()
+  
+  
+  # arr <- dat %>% group_by(EMPI) %>%
+  # summarise(RAR_ARR_criteria = factor(true_false_NA(Aldo >= 15 & PRA <= 0.5 & Aldo/PRA >= 20), levels=c(TRUE, FALSE)),
+  #           PA_Dx_C = factor(sum(Dx_h1_Primary_aldosteronism, na.rm=TRUE) >= PA_Dx_C, levels=c(TRUE, FALSE))) %>%
+  # select(PA_Dx_C, RAR_ARR_criteria) %>%
+  # table()
+  
+  aldo <- dat %>% group_by(EMPI) %>%
+  summarise(RAR_Aldo_criteria = factor(true_false_NA(Aldo, PRA, "RAR_Aldo"), levels=c(TRUE, FALSE)),
+            PA_Dx_C = factor(sum(Dx_h1_Primary_aldosteronism, na.rm=TRUE) >= PA_Dx_C, levels=c(TRUE, FALSE))) %>%
+  select(PA_Dx_C, RAR_Aldo_criteria) %>%
+  table()
+  
+  lax <- dat %>% group_by(EMPI) %>%
+  summarise(RAR_Lax_criteria = factor(true_false_NA(Aldo, PRA, "RAR_Lax"), levels=c(TRUE, FALSE)),
+            PA_Dx_C = factor(sum(Dx_h1_Primary_aldosteronism, na.rm=TRUE) >= PA_Dx_C, levels=c(TRUE, FALSE))) %>%
+  select(PA_Dx_C, RAR_Lax_criteria) %>%
+  table()
+  
+  
+  PA_p_RAR_p <- lapply(list(strict, pra, aldo, lax), function(X){X[1,1]}) %>% unlist
+  
+  PA_n_RAR_n <- lapply(list(strict, pra, aldo, lax), function(X){X[2,2]}) %>% unlist
+  
+  PA_p_RAR_n <- lapply(list(strict, pra, aldo, lax), function(X){X[1,2]}) %>% unlist
+  
+  PA_n_RAR_p <- lapply(list(strict, pra, aldo, lax), function(X){X[2,1]}) %>% unlist
+  
+  
+  pp_on_PA_p <- PA_p_RAR_p/(PA_p_RAR_p + PA_p_RAR_n)
+  pp_on_RAR_p <- PA_p_RAR_p/(PA_p_RAR_p + PA_n_RAR_p)
+  
+  
+  temp <- data.frame(PA_Dx_N_Criteria = PA_Dx_C,PA_p_RAR_p = PA_p_RAR_p, PA_n_RAR_n = PA_n_RAR_n, 
+                     PA_p_RAR_n = PA_p_RAR_n, PA_n_RAR_p = PA_n_RAR_p, 
+                     pp_on_PA_p = pp_on_PA_p, pp_on_RAR_p = pp_on_RAR_p, RAR_Criteria = c("Strict","PRA","Aldo","Lax"))
+  
+  ret <- melt(temp, id.vars = c('PA_Dx_N_Criteria', "RAR_Criteria"))
+  ret$PA_Dx_N_Criteria <- paste(">=", ret$PA_Dx_N_Criteria)
+  
+  ret$RAR_Criteria <- factor(ret$RAR_Criteria, levels=c("Strict","PRA","Aldo","Lax"))
+  
+  return(ret)
+}
+
+```
+
+```{r prepare_for_PA_Dx_all_plot}
+all_pa_dx_C_list <- lapply(1:3, function(x){foo(rar_mg, PA_Dx_C = x)})
+all_pa_dx_C <- do.call(rbind, all_pa_dx_C_list)
+```
+
+Make a plot!   
+```{r pa_dx_1_2_3_plt_PPV}
+all_pa_dx_C %>% filter(variable == "pp_on_PA_p" | variable == "pp_on_RAR_p") %>%
+  mutate(variable = factor(variable, labels=c("P(PA+ & RAR+|PA+)", "P(PA+ & RAR+|RAR+)"))) %>%
+  ggplot(.) + 
+  geom_line(aes(x=RAR_Criteria, y = value, group=PA_Dx_N_Criteria, color=as.factor(PA_Dx_N_Criteria))) + 
+  geom_point(aes(x=RAR_Criteria, y = value, group=PA_Dx_N_Criteria, color=as.factor(PA_Dx_N_Criteria))) + 
+  labs(x="RAR Criteria", y= "Percentage") + 
+  guides(color=guide_legend(title="# of PA Dx as Criterion")) + 
+  scale_y_continuous(labels=percent) + facet_wrap(~variable, nrow = 2, scales = "free_y")
+
+```
+
+
+If change PA Dx from 3 to 5:
+```{r pa_dx_1_to_7_plt_PPV_sensitivity}
+all_pa_dx_C_list_N <- lapply(1:7, function(x){foo(rar_mg, PA_Dx_C = x)})
+all_pa_dx_C_N <- do.call(rbind, all_pa_dx_C_list_N)
+
+all_pa_dx_C_N %>% filter(variable == "pp_on_PA_p" | variable == "pp_on_RAR_p") %>%
+  mutate(variable = factor(variable, labels=c("P(Dx+ & Lab+|Dx+)", "P(Dx+ & Lab+|Lab+)"))) %>%
+  ggplot(.) + 
+  geom_line(aes(x=RAR_Criteria, y = value, group=PA_Dx_N_Criteria, color=as.factor(PA_Dx_N_Criteria))) + 
+  geom_point(aes(x=RAR_Criteria, y = value, group=PA_Dx_N_Criteria, color=as.factor(PA_Dx_N_Criteria))) + 
+  labs(x="RAR Criteria", y= "Percentage") + 
+  guides(color=guide_legend(title="# of PA Dx as Criterion")) + 
+  scale_y_continuous(labels=percent) + facet_wrap(~variable, nrow = 2, scales = "free_y")
+
+```
+Take a look at patients in different Lab(+/-)/Dx(+/-) groups:
+```{r pa_dx_1_2_3_plt_pts}
+all_pa_dx_C %>% filter(variable %in% c("PA_p_RAR_p", "PA_n_RAR_n","PA_p_RAR_n","PA_n_RAR_p")) %>%
+  mutate(variable = factor(variable, levels=c("PA_p_RAR_p", "PA_n_RAR_n","PA_p_RAR_n","PA_n_RAR_p"),
+                           labels=c("Dx+ & Lab+","Dx- & Lab-","Dx+ & Lab-","Dx- & Lab+"))) %>%
+  ggplot(.) + 
+  geom_bar(aes(x=variable, y = value, fill=as.factor(RAR_Criteria)), position='dodge', stat = 'identity') + 
+  facet_wrap(~ PA_Dx_N_Criteria) + 
+  labs(x="RAR Criteria", y= "Number of Patients", title="Number of Patients in different PA Dx Criteria and Lab RRA Criteria") + 
+  theme(plot.title = element_text(hjust=0.5), axis.text.x = element_text(angle=30,vjust=0.5))
+```
+The {PA-, RAR-} group is always the highest, so remove it for a better view on others:
+```{r pa_dx_1_2_3_plt_pts_no_tn}
+all_pa_dx_C %>% filter(variable %in% c("PA_p_RAR_p","PA_p_RAR_n","PA_n_RAR_p")) %>%
+  mutate(variable = factor(variable, levels=c("PA_p_RAR_p", "PA_n_RAR_n","PA_p_RAR_n","PA_n_RAR_p"),
+                           labels=c("Dx+ & Lab+","Dx- & Lab-","Dx+ & Lab-","Dx- & Lab+"))) %>%
+  ggplot(.) + 
+  geom_bar(aes(x=variable, y = value, fill=as.factor(RAR_Criteria)), position='dodge', stat = 'identity') + 
+  facet_wrap(~ PA_Dx_N_Criteria) + 
+  labs(x="RAR Criteria", y= "Number of Patients", title="Number of Patients in different PA Dx Criteria and Lab RRA Criteria") + 
+  theme(plot.title = element_text(hjust=0.5), axis.text.x = element_text(angle=30,vjust=0.5))
+```
+
+```{r pa_dx_1_2_3_plt_pts_no_tn_change}
+all_pa_dx_C_N %>% filter(variable %in% c("PA_p_RAR_p","PA_p_RAR_n","PA_n_RAR_p")) %>%
+  mutate(variable = factor(variable, levels=c("PA_p_RAR_p", "PA_n_RAR_n","PA_p_RAR_n","PA_n_RAR_p"),
+                           labels=c("Dx+ & Lab+","Dx- & Lab-","Dx+ & Lab-","Dx- & Lab+"))) %>%
+  ggplot(.) + 
+  geom_bar(aes(x=RAR_Criteria, y = value, fill=as.factor(PA_Dx_N_Criteria)), position='dodge', stat = 'identity') + 
+   facet_wrap(~ variable) + 
+  labs(x="RAR Criteria", y= "Number of Patients", title="Number of Patients in different PA Dx Criteria and Lab RRA Criteria") + 
+  theme(plot.title = element_text(hjust=0.5))
+```
+
+Another question is what is the union of PA+ and RAR+, according to different criterias:
+```{r PA_Dx_union_RAR_plt_by_Dx}
+all_pa_dx_C_N %>% filter(variable %in% c("PA_p_RAR_p","PA_p_RAR_n","PA_n_RAR_p")) %>%
+  group_by(PA_Dx_N_Criteria, RAR_Criteria) %>%
+  summarise(PA_union_Dx = sum(value)) %>%
+  ggplot(.) + 
+  geom_bar(aes(x=as.factor(PA_Dx_N_Criteria), y = PA_union_Dx, fill=as.factor(RAR_Criteria)), position='dodge', stat = 'identity') + 
+  labs(x="Dx Criteria", y= "Number of Patients", title="Number of Patients in Dx+ or Lab+") + 
+  theme(plot.title = element_text(hjust=0.5))
+```
+
+```{r PA_Dx_union_RAR_plt_by_RAR}
+all_pa_dx_C_N %>% filter(variable %in% c("PA_p_RAR_p","PA_p_RAR_n","PA_n_RAR_p", "PA_n_RAR_n")) %>%
+  mutate(v = ifelse(variable %in% c("PA_p_RAR_p","PA_p_RAR_n","PA_n_RAR_p"), "P","N")) %>%
+  group_by(PA_Dx_N_Criteria, RAR_Criteria, v) %>%
+  summarise(PA_union_Dx = sum(value)) %>% ungroup() %>%
+  group_by(PA_Dx_N_Criteria, RAR_Criteria) %>%
+  mutate(N = sum(PA_union_Dx)) %>%
+  filter(v == "P") %>%
+  mutate(PA_union_Dx_percent = PA_union_Dx/N) %>%
+  ggplot(.) + 
+  geom_bar(aes(x=as.factor(PA_Dx_N_Criteria), y = PA_union_Dx_percent, fill=as.factor(RAR_Criteria)), position='dodge', stat = 'identity') + 
+  labs(x="Dx Criteria", y= "Percentage of Patients", title="Percentage of Patients in Dx+ or Lab+") + 
+  theme(plot.title = element_text(hjust=0.5)) + scale_y_continuous(labels=percent)
+```
+```{r PA_Dx_union_RAR_plt_by_PA}
+all_pa_dx_C_N %>% filter(variable %in% c("PA_p_RAR_p","PA_p_RAR_n","PA_n_RAR_p")) %>%
+  group_by(PA_Dx_N_Criteria, RAR_Criteria) %>%
+  summarise(PA_union_Dx = sum(value)) %>%
+  ggplot(.) + 
+  geom_bar(aes(x=as.factor(RAR_Criteria), y = PA_union_Dx, fill=as.factor(PA_Dx_N_Criteria)), position='dodge', stat = 'identity') + 
+  labs(x="RAR Criteria", y= "Number of Patients", title="Number of Patients in Dx+ | Lab+") + 
+  theme(plot.title = element_text(hjust=0.5))
+```
+The two plots above show that the number of patients in {PA+ or RAR+} is increasing when we change RAR Criteria from Strict to Lax for a specific PA Criteria; but for a specific RAR Criteria, the number of patients in {PA+ or RAR+} is decreasing when we increase the PA Criteria.
+
+##### Who are discordant patients? 
+###### RAR Strict + but only 0 or 1 PA Dx (grp1) {-}
+0/1 PA Dx 
+Why do these people only have 0/1 PA Dx but meet RAR Strict Criteria?   
+- short time in system -- not really
+- short time to 1st RAR -- not really
+- Other HTN/Aldo Dx?
+- Differences in Entity/Location
+```{r distribution}
+empi_few_dx_RAR_Positive <- rar_mg %>% group_by(EMPI) %>%
+  summarise(RAR_Strict_criteria = (true_false_NA(Aldo, PRA, "RAR_Strict")),
+            PA_Dx_C = (sum(Dx_h1_Primary_aldosteronism, na.rm=TRUE))) %>%
+  ungroup() %>%
+  filter(PA_Dx_C <= 1 & RAR_Strict_criteria) %>%
+  select(EMPI)
+
+pts %>% mutate(grp = ifelse(EMPI %in%empi_few_dx_RAR_Positive$EMPI, "Discordants", "Other")) %>%
+  ggplot(.) + geom_density(aes(time_in_sys_yr, group=grp, color=grp))
+
+pts %>% mutate(grp = ifelse(EMPI %in%empi_few_dx_RAR_Positive$EMPI, "Discordants", "Other")) %>%
+  ggplot(.) + geom_density(aes(time_enc_to_1st_RAR_yr, group=grp, color=grp))
+
+```
+
+
+But as for other Hyperaldo Dx's:
+```{r other_hyperaldo_Dx}
+pts %>% mutate(grp = ifelse(EMPI %in%empi_few_dx_RAR_Positive$EMPI, "Discordants", "Other")) %>%
+  ggplot(.) + geom_density(aes(Dx_h0_Hyperaldo_n, group=grp, color=grp)) + xlim(0,5)
+```
+```{r h0_hyperaldo}
+pts %>% mutate(grp = ifelse(EMPI %in%empi_few_dx_RAR_Positive$EMPI, "Discordants", "Other")) %>%
+  filter(Dx_h0_Hyperaldo_n <= 10) %>%
+  ggplot(.) + geom_bar(aes(Dx_h0_Hyperaldo_n, group=grp, fill=grp), position='dodge')
+```
+```{r h0_htn}
+pts %>% mutate(grp = ifelse(EMPI %in%empi_few_dx_RAR_Positive$EMPI, "Discordants", "Other")) %>%
+  filter(Dx_h0_Hyperaldo_n <= 10) %>%
+  ggplot(.) + geom_density(aes(Dx_h0_HTN_n, group=grp, color=grp))
+
+pts %>% 
+  filter(EMPI %in%empi_few_dx_RAR_Positive$EMPI) %>%
+  ggplot(.) + geom_bar(aes(Dx_h0_HTN_n))
+```
+What's the ENTITY? ~ no difference from that for whole cohort.
+```{r discordant_ENTITY}
+pts %>% 
+  filter(EMPI %in% empi_few_dx_RAR_Positive$EMPI) %>%
+  ggplot(.) + geom_bar(aes(rar_entity))
+```
+
+how many in RDB? `r sum(pts[pts$EMPI %in% empi_few_dx_RAR_Positive$EMPI,]$PA_AVS_tot_0115)` This is `r percent(sum(pts[pts$EMPI %in% empi_few_dx_RAR_Positive$EMPI,]$PA_AVS_tot_0115)/nrow(empi_few_dx_RAR_Positive))` RDB+ in this group!
+
+```{r export_dis_grp1, echo=F}
+temp <- pts %>% filter(EMPI %in% empi_few_dx_RAR_Positive$EMPI) %>% select(EMPI, Dx_h1_Primary_aldosteronism_n, Aldo, PRA, DRC, RAR_DATE,PA_AVS_tot_0115)
+write.csv(temp, file="/home/chart_review/discordant_pts_grp1.csv", row.names = F)
+```
+
+
+###### many PA Dx (3), but RAR Lax- (grp2) {-}
+```{r many_pa_lax_neg}
+empi_3_dx_lax_neg <- rar_mg %>% group_by(EMPI) %>%
+  summarise(RAR_Lax_criteria = (true_false_NA(Aldo, PRA, "RAR_Lax")),
+            PA_Dx_C = (sum(Dx_h1_Primary_aldosteronism, na.rm=TRUE))) %>%
+  ungroup() %>%
+  filter(PA_Dx_C >= 3 & !RAR_Lax_criteria) %>%
+  select(EMPI)
+```
+`r nrow(empi_3_dx_lax_neg)` patients here. Among them, `r sum(pts[pts$EMPI %in% empi_3_dx_lax_neg,]$PA_AVS_tot_0115)` are in RDB.
+
+```{r export_dis_grp2, echo=F}
+temp <- pts %>% filter(EMPI %in% empi_3_dx_lax_neg$EMPI) %>% select(EMPI, Dx_h1_Primary_aldosteronism_n, Aldo, PRA, DRC, RAR_DATE,PA_AVS_tot_0115)
+write.csv(temp, file="/home/chart_review/discordant_pts_grp2.csv", row.names = F)
+```
+
+
+###### many PA Dx (3), but RAR Lax+, Strict- (grp3){-}
+```{r many_pa_lax_pos_strict_neg}
+empi_3_dx_lax_pos_strict_neg <- rar_mg %>% group_by(EMPI) %>%
+  summarise(RAR_Lax_criteria = (true_false_NA(Aldo, PRA, "RAR_Lax")),
+            RAR_Strict_criteria = (true_false_NA(Aldo, PRA, "RAR_Strict")),
+            PA_Dx_C = (sum(Dx_h1_Primary_aldosteronism, na.rm=TRUE))) %>%
+  ungroup() %>%
+  filter(PA_Dx_C >= 3 & RAR_Lax_criteria & !RAR_Strict_criteria) %>%
+  select(EMPI)
+```
+`r nrow(empi_3_dx_lax_pos_strict_neg)` patients here. Among them, `r sum(pts[pts$EMPI %in% empi_3_dx_lax_pos_strict_neg,]$PA_AVS_tot_0115)` are in RDB.
+
+```{r export_dis_grp3, echo=F}
+temp <- pts %>% filter(EMPI %in% empi_3_dx_lax_pos_strict_neg$EMPI) %>% select(EMPI, Dx_h1_Primary_aldosteronism_n, Aldo, PRA, DRC, RAR_DATE,PA_AVS_tot_0115)
+write.csv(temp, file="/home/chart_review/discordant_pts_grp3.csv", row.names = F)
+```
+
+###### H1_Primary_Aldo-, but H0_Hyperaldo+ (grp4){-}
+```{r discordant_grp4}
+empi_grp4 <- pts %>% filter(Dx_h0_Hyperaldo_n != 0 & Dx_h1_Primary_aldosteronism_n == 0) %>%
+  select(EMPI, PA_AVS_tot_0115,Dx_h0_Hyperaldo_n, Dx_h1_Primary_aldosteronism_n, Dx_h1_Other_hyperaldo_n, Dx_h0_HTN_n, Aldo, PRA, DRC)
+```
+There are `r nrow(empi_grp4)`, `r sum(empi_grp4$PA_AVS_tot_0115)`
+
+
+```{r export_dis_grp4, echo=F}
+write.csv(empi_grp4, file="/home/chart_review/discordant_pts_grp4.csv", row.names = F)
+```
+
+
+
+
+
+
+
+## Integrate with RDB
+```{r load_RDB_for_right_censor, include=FALSE}
+AVS_pts <- read_excel(path = "/data/raw_data/PA/Debbie_DB/AVS- total patient list 2001-2015.xlsx", 
+                      sheet = "Sheet1")
+AVS_pts$enctr_date <- as.POSIXct(AVS_pts$enctr_date, format="%d-%b-%y")
+```
+
+### Inclusion/Exclusion Criteria
+When integrating with RDB, it is necessary to notice that there is an enroll period for current version of database. The date of last day in RDB, `r max(AVS_pts$enctr_date,na.rm=T)`, is used for right-censoring the pts and enc data. Also, the patients in RDB should be in.
+```{r pa_dx_RDB_tb, cache.lazy=FALSE}
+# use the last record in DB as end date for right censoring
+db_end_time <- max(AVS_pts$enctr_date,na.rm=T)
+
+# get RDB pts
+empi_rdb <- pts %>% filter(PA_AVS_tot_0115) %>% pull(EMPI)
+
+# # get RAR pts
+# empi_rar <- rar_mg %>% 
+#   filter(ENC_DATE <= db_end_time) %>% 
+#               mutate(RAR = !is.na(Aldo) + !is.na(PRA) + !is.na(DRC)) %>%
+#               group_by(EMPI) %>%
+#               summarise(RAR_flg = sum(RAR)) %>%
+#               ungroup() %>%
+#               filter(RAR_flg != 0) %>% pull(EMPI)
+# 
+# # get Dx_h0_Hyperaldo pts
+# empi_dx <- rar_mg %>% 
+#   filter(ENC_DATE <= db_end_time) %>%
+#             group_by(EMPI)   %>%
+#             summarise(dx_flg = sum(Dx_h0_Hyperaldo)) %>%
+#             ungroup() %>%
+#             filter(dx_flg != 0) %>% pull(EMPI)
+#   
+
+
+rar_mg_db <- rar_mg %>% filter(EMPI %in% empi_rdb | ENC_DATE <= db_end_time)
+
+
+pts_db <- rar_mg_db %>% group_by(EMPI) %>%
+  summarise(RAR_Strict_criteria = factor(true_false_NA(Aldo, PRA, "RAR_Strict"), levels=c(TRUE, FALSE)),
+            RAR_Aldo_criteria = factor(true_false_NA(Aldo, PRA, "RAR_Aldo"), levels=c(TRUE, FALSE)),
+            RAR_PRA_criteria = factor(true_false_NA(Aldo, PRA, "RAR_PRA"), levels=c(TRUE, FALSE)),
+            RAR_Lax_criteria = factor(true_false_NA(Aldo, PRA, "RAR_Lax"), levels=c(TRUE, FALSE))) %>%
+  select(EMPI, RAR_Strict_criteria, RAR_Aldo_criteria, RAR_PRA_criteria, RAR_Lax_criteria) %>% left_join(., pts, by="EMPI")
+
+```
+
+### RDB and Dx
+A plot showing # of RDB+ in each PA Dx groups (by count).
+```{r rdb_all_pa}
+pts_db %>% group_by(Dx_h1_Primary_aldosteronism_n) %>%
+  summarise(N=n(), RDB = sum(PA_AVS_tot_0115, na.rm=TRUE)) %>%
+  mutate(RDB_percent = RDB/N) %>%
+  ggplot(.) + 
+  geom_bar(aes(x=Dx_h1_Primary_aldosteronism_n, y=RDB_percent), stat='identity', fill='blue', alpha=0.5) + 
+  scale_y_continuous(labels=percent) +
+  geom_label(aes(x=Dx_h1_Primary_aldosteronism_n, y=RDB_percent, label=N)) +
+  labs(x= "# of Primary Aldo - H1 Level", y="% for RDB+", title="Percentage for RDB+ in All PA Dx groups (total pts labeled)") +
+  theme(plot.title = element_text(hjust=0.5))
+```
+If we change into grouped PA Dx:
+```{r rdb_pa_dx}
+pts_db %>% group_by(PA_Dx) %>%
+  summarise(N=n(), RDB = sum(PA_AVS_tot_0115, na.rm=TRUE)) %>%
+  mutate(RDB_percent = RDB/N) %>%
+  ggplot(.) + 
+  geom_bar(aes(x=PA_Dx, y=RDB_percent), stat='identity', fill='blue', alpha=0.5) + 
+  geom_label(aes(x=PA_Dx, y=RDB_percent, label=N)) +
+  labs(x= "# of Primary Aldo - grouped H1 Level", y="% for RDB+", title="Percentage for RDB+ in Grouped PA Dx (total pts labeled)") +
+  theme(plot.title = element_text(hjust=0.5)) +
+  scale_y_continuous(labels=percent)
+```
+
+On the other hand, if we look into each RDB group:
+```{r pa_grp_percent_among_RDB}
+cc <- seq_gradient_pal("lightblue", "blue")(seq(0,1,length.out = 10))
+pts_db %>% group_by(PA_AVS_tot_0115, PA_Dx) %>%
+  summarise(N=n()) %>% ungroup() %>%
+  group_by(PA_AVS_tot_0115) %>%
+  mutate(tot=sum(N), p=N/tot) %>% ungroup() %>%
+  ggplot(.) + geom_bar(aes(x=PA_AVS_tot_0115, y=p, fill=PA_Dx), position="dodge", stat='identity') + scale_fill_manual(values = cc) + 
+  scale_y_continuous(labels=percent) + 
+  labs(x="RDB", y='% for PA Dx', title="Percentages for PA Dx groups in RDB+/-") + 
+  theme(plot.title = element_text(hjust=0.5))
+```
+
+
+Then, try different PA Dx criteria:
+```{r rdb_pa_dx_Criteria_fun, echo=FALSE}
+foo2 <- function(dat, PA_Dx_C){
+  dat %<>% select(EMPI, PA_AVS_tot_0115, Dx_h1_Primary_aldosteronism_n)
+ 
+  
+  tmp <- dat %>% mutate(Dx_Criteria = Dx_h1_Primary_aldosteronism_n >= PA_Dx_C) %>%
+    group_by(Dx_Criteria) %>%
+    summarise(rdb_positive = sum(PA_AVS_tot_0115), N=n(), rdb_percent = rdb_positive/N)
+
+  tmp$PA_Dx_C <- paste(">=", PA_Dx_C)
+  
+  return(tmp)
+}
+
+
+rdb_pa_dx_5_list <- lapply(0:5, function(x){foo2(pts_db, x)})
+rdb_pa_dx_5 <- do.call(rbind, rdb_pa_dx_5_list)
+
+rdb_pa_dx_5 %>% 
+  ggplot(.) + 
+  geom_bar(aes(x=PA_Dx_C, y=rdb_percent, group=Dx_Criteria, fill=Dx_Criteria), position="dodge", stat='identity', alpha=0.5) + 
+  geom_label(aes(x=PA_Dx_C, y=rdb_percent+0.02, label=N,group=Dx_Criteria), position = position_dodge(width = 1), stat="identity") +
+  labs(x= "PA Dx Criteria", y="% for RDB+", title="Percentage for RDB+ in different PA Dx Criteria (total pts labelled)") +
+  theme(plot.title = element_text(hjust=0.5)) +
+  scale_y_continuous(labels=percent)
+```
+
+##### Discordance {-}
+If we apply 2 as PA Dx Criteria, we can get a 2 by 2 table:
+```{r rdb_padx_2}
+padx_2 <- factor(pts_db$Dx_h1_Primary_aldosteronism_n >= 2, levels=c(TRUE, FALSE))
+rdb <- factor(pts_db$PA_AVS_tot_0115, levels=c(TRUE, FALSE))
+table(padx_2,rdb)
+```
+This table shows a discordance of `r table(padx_2,rdb)[1,2]+table(padx_2,rdb)[2,1]` patients; in detail,`r table(padx_2,rdb)[1,2]` patients are RDB- & PA+, `r table(padx_2,rdb)[2,1]` patients are RDB+ & PA-
+```{r discordant_grp5_grp6}
+temp <- pts_db
+temp$case <- case_when(temp$Dx_h1_Primary_aldosteronism_n < 2 & temp$PA_AVS_tot_0115 ~ "RDB+ & PA-", ## grp5
+                  temp$Dx_h1_Primary_aldosteronism_n >= 2 & !temp$PA_AVS_tot_0115 ~ "RDB- & PA+",  ## grp6
+                  temp$Dx_h1_Primary_aldosteronism_n >= 2 & temp$PA_AVS_tot_0115 ~ "RDB+ & PA+",
+                  temp$Dx_h1_Primary_aldosteronism_n < 2 & !temp$PA_AVS_tot_0115 ~ "RDB- & PA-",
+                  TRUE ~ "concordant")
+temp$grp <- ifelse(temp$case %in% c("RDB+ & PA-", "RDB- & PA+"), "discordance","condordant")
+
+```
+
+For Time in system, RDB+ & PA- group shows a high density in short Time in System.
+```{r disccrdant_5_6_dis_time_in_sys}
+temp %>% ggplot(.) +
+  geom_density(aes(time_in_sys_yr, group=case, color=case, linetype=grp)) +
+  labs(title="Time in System in 4 Groups") + 
+  theme(plot.title = element_text(hjust = 0.5))
+```
+A plot shows distribution of number of encounters in different groups:
+```{r disccrdant_5_6_dis_enc_n}
+temp %>% ggplot(.) +
+  geom_density(aes(enc_n, group=case, color=case, linetype=grp))
+```
+```{r disccrdant_5_6_dis_sbp}
+temp %>% 
+  select(sbp, dbp, case, grp) %>%
+  melt(id.vars=c('case','grp')) %>%
+  ggplot(.) +
+  geom_density(aes(value, group=case, color=case, linetype=grp)) + 
+  labs(x="BP", title="BP's in 3 Groups") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  facet_wrap(~variable)
+```
+
+```{r disccrdant_5_6_dis_RAR_tests}
+temp %>% ggplot(.) +
+  geom_bar(aes(RAR_tests_n, group=case, fill=case), position="dodge") + facet_wrap(~grp, scales="free_y")
+```
+
+```{r disccrdant_5_6_dis_RAR_entity}
+temp %>% 
+  group_by(case) %>%
+  mutate(N=n()) %>% ungroup() %>%
+  group_by(case, rar_entity) %>%
+  summarise(N=mean(N), entity_percent = n()/N) %>%
+  ggplot(.) +
+  geom_bar(aes(x=case, y=entity_percent, group=rar_entity, fill=rar_entity), position="dodge", stat="identity") +
+  scale_y_continuous(labels = percent) + 
+  labs(x="Concordant & Discordant Groups between RDB and PA Dx", y="% of patient", title="Composition of Patient RAR Entity for different Groups") + theme(plot.title = element_text(hjust=0.5))
+```
+For the RDB+ & PA- group, the percentage of NA entity is high.
+
+
+```{r disccrdant_5_6_dis_primary_entity}
+temp %>% 
+  group_by(case) %>%
+  mutate(N=n()) %>% ungroup() %>%
+  group_by(case, pri_entity) %>%
+  summarise(N=mean(N), entity_percent = n()/N) %>%
+  ggplot(.) +
+  geom_bar(aes(x=case, y=entity_percent, group=pri_entity, fill=pri_entity), position="dodge", stat="identity") +
+  scale_y_continuous(labels = percent) + 
+  labs(x="Concordant & Discordant Groups between RDB and PA Dx", y="% of patient", title="Composition of Patient Primary Entity for different Groups") + theme(plot.title = element_text(hjust=0.5))
+
+```
+For Primary ENTITY, UNSPECIFIED and NA are both high in RDB+ & PA-.
+
+```{r export_dis_grp5_6, echo=F}
+empi_grp5 <- temp %>% filter(case == "RDB+ & PA-") %>% select(EMPI, Dx_h1_Primary_aldosteronism_n, Aldo, PRA, DRC, RAR_DATE,PA_AVS_tot_0115, time_in_sys_yr, time_enc_to_1st_hyperaldo_dx_yr)
+write.csv(empi_grp5, file="/home/chart_review/discordant_pts_grp5.csv", row.names = F)
+
+
+empi_grp6 <- temp %>% filter(case == "RDB- & PA+") %>% select(EMPI, Dx_h1_Primary_aldosteronism_n, Aldo, PRA, DRC, RAR_DATE,PA_AVS_tot_0115, time_in_sys_yr, time_enc_to_1st_hyperaldo_dx_yr)
+write.csv(empi_grp6, file="/home/chart_review/discordant_pts_grp6.csv", row.names = F)
+```
+There are `r nrow(empi_grp5)` in grp5, `r nrow(empi_grp6)` in grp6.
+
+
+
+### RDB and Lab
+According to 8 different Lab criteria, the intersections are as follows:
+
+
+#### RAR Strict Criteria {-}
+```{r with_RAR_strict_RDB, echo=FALSE}
+rdb_RAR_strict <- rar_mg_db %>% group_by(EMPI) %>%
+  summarise(RAR_Strict_criteria = factor(true_false_NA(Aldo, PRA, "RAR_Strict"), levels=c(TRUE, FALSE)), 
+            RDB = factor(any(PA_AVS_tot_0115, na.rm=TRUE), levels=c(TRUE, FALSE))) %>%
+  select(RDB, RAR_Strict_criteria) %>%
+  table(., useNA="always")
+rdb_RAR_strict
+```
+
+#### RAR PRA Criteria {-}
+```{r with_RAR_PRA_RDB, echo=FALSE}
+rdb_RAR_pra <- rar_mg_db %>% group_by(EMPI) %>%
+  summarise(RAR_PRA_criteria = factor(true_false_NA(Aldo, PRA, "RAR_PRA"), levels=c(TRUE, FALSE)),
+            RDB = factor(any(PA_AVS_tot_0115, na.rm=TRUE), levels=c(TRUE, FALSE))) %>%
+  select(RDB, RAR_PRA_criteria) %>%
+  table(., useNA="always")
+rdb_RAR_pra
+```
+
+ 
+
+#### RAR Aldo Criteria {-}
+```{r with_RAR_Aldo_RDB, echo=FALSE}
+rdb_RAR_aldo <- rar_mg_db %>% group_by(EMPI) %>%
+  summarise(RAR_Aldo_criteria = factor(true_false_NA(Aldo, PRA, "RAR_Aldo"), levels=c(TRUE, FALSE)),
+            RDB = factor(any(PA_AVS_tot_0115, na.rm=TRUE), levels=c(TRUE, FALSE))) %>% ungroup() %>%
+  select(RDB, RAR_Aldo_criteria) %>%
+  table(., useNA="always")
+rdb_RAR_aldo
+```
+
+#### RAR Lax Criteria {-}
+```{r with_RAR_Lax_RDB, echo=FALSE}
+rdb_RAR_lax <- rar_mg_db %>% group_by(EMPI) %>%
+  summarise(RAR_Lax_criteria = factor(true_false_NA(Aldo, PRA, "RAR_Lax"), levels=c(TRUE, FALSE)),
+            RDB = factor(any(PA_AVS_tot_0115, na.rm=TRUE), levels=c(TRUE, FALSE))) %>%
+  select(RDB, RAR_Lax_criteria) %>%
+  table(., useNA="always")
+rdb_RAR_lax
+```
+
+```{r with_RAR_Lax_ppv_RDB, echo=FALSE}
+prop.table(rdb_RAR_lax, margin=1)
+```
+
+```{r with_RAR_Lax_sensitivity_RDB, echo=FALSE}
+prop.table(rdb_RAR_lax, margin=2)
+```
+
+
+
+
+#### Aldo Strict Criteria {-}
+Note that in this Criteria, only Aldo is used no matter whether the patient has PRA/DRC test.
+```{r with_Aldo_strict_RDB, echo=FALSE}
+rdb_aldo_strict <- rar_mg_db %>% group_by(EMPI) %>%
+  summarise(Aldo_Strict_criteria = factor(true_false_NA(Aldo, PRA, "Aldo_Strict"), levels=c(TRUE, FALSE)), 
+            RDB = factor(any(PA_AVS_tot_0115, na.rm=TRUE), levels=c(TRUE, FALSE))) %>%
+  select(RDB, Aldo_Strict_criteria) %>%
+  table(., useNA="always")
+rdb_aldo_strict
+```
+#### Aldo Lax Criteria {-}
+Note that in this Criteria, only Aldo is used no matter whether the patient has PRA/DRC test.
+```{r with_Aldo_lax_RDB, echo=FALSE}
+rdb_aldo_lax <- rar_mg_db %>% group_by(EMPI) %>%
+  summarise(Aldo_Lax_criteria = factor(true_false_NA(Aldo, PRA, "Aldo_Lax"), levels=c(TRUE, FALSE)), 
+            RDB = factor(any(PA_AVS_tot_0115, na.rm=TRUE), levels=c(TRUE, FALSE))) %>%
+  select(RDB, Aldo_Lax_criteria) %>%
+  table(., useNA="always")
+rdb_aldo_lax
+```
+#### PRA Strict Criteria {-}
+Note that in this Criteria, only PRA is used no matter whether the patient has Aldo test.
+```{r with_PRA_strict_RDB, echo=FALSE}
+rdb_pra_strict <- rar_mg_db %>% group_by(EMPI) %>%
+  summarise(PRA_Strict_criteria = factor(true_false_NA(Aldo, PRA, "PRA_Strict"), levels=c(TRUE, FALSE)), 
+            RDB = factor(any(PA_AVS_tot_0115, na.rm=TRUE), levels=c(TRUE, FALSE))) %>%
+  select(RDB, PRA_Strict_criteria) %>%
+  table(., useNA="always")
+rdb_pra_strict
+```
+#### PRA Lax Criteria {-}
+Note that in this Criteria, only PRA is used no matter whether the patient has Aldo test.
+```{r with_PRA_lax_RDB, echo=FALSE}
+rdb_pra_lax <- rar_mg_db %>% group_by(EMPI) %>%
+  summarise(PRA_Lax_criteria = factor(true_false_NA(Aldo, PRA, "PRA_Lax"), levels=c(TRUE, FALSE)), 
+            RDB = factor(any(PA_AVS_tot_0115, na.rm=TRUE), levels=c(TRUE, FALSE))) %>%
+  select(RDB, PRA_Lax_criteria) %>%
+  table(., useNA="always")
+rdb_pra_lax
+```
+
+#### ALL Strict Criteria {-}
+```{r with_all_strict_RDB, echo=FALSE}
+rdb_all_strict <- rar_mg_db %>% group_by(EMPI) %>%
+  summarise(All_Strict_criteria = factor(true_false_NA(Aldo, PRA, "ALL_Strict"), levels=c(TRUE, FALSE)), 
+            RDB = factor(any(PA_AVS_tot_0115, na.rm=TRUE), levels=c(TRUE, FALSE))) %>%
+  select(RDB, All_Strict_criteria) %>%
+  table(., useNA="always")
+rdb_all_strict
+```
+```{r}
+temp <- rar_mg_db %>% group_by(EMPI) %>%
+  summarise(All_Strict_criteria = factor(true_false_NA(Aldo, PRA, "ALL_Strict"), levels=c(TRUE, FALSE)), 
+            RDB = factor(any(PA_AVS_tot_0115, na.rm=TRUE), levels=c(TRUE, FALSE))) %>%
+  select(EMPI, RDB, All_Strict_criteria) %>% filter(is.na(All_Strict_criteria))
+```
+
+#### ALL Lax Criteria {-}
+
+```{r with_all_lax_RDB, echo=FALSE}
+rdb_all_lax <- rar_mg_db %>% group_by(EMPI) %>%
+  summarise(All_Lax_criteria = factor(true_false_NA(Aldo, PRA, "ALL_Lax"), levels=c(TRUE, FALSE)), 
+            RDB = factor(any(PA_AVS_tot_0115, na.rm=TRUE), levels=c(TRUE, FALSE))) %>%
+  select(RDB, All_Lax_criteria) %>%
+  table(., useNA="always")
+rdb_all_lax
+```
+
+
+Change Criteria and plot:
+```{r rdb_lab_merge}
+clean_rdb_lab <- function(x){
+  x <- as.data.frame(x)
+  
+  x$Lab_Criteria <- names(x)[2]
+  
+  names(x)[2] <- "Lab_Criteria_Result"
+  x <- x[!is.na(x$RDB),]
+  
+  return(x)
+}
+
+rdb_lab_ls <- lapply(list(rdb_RAR_strict, rdb_RAR_aldo, rdb_RAR_pra, rdb_RAR_lax, 
+                          rdb_aldo_strict, rdb_aldo_lax, rdb_pra_strict, rdb_pra_lax, 
+                          rdb_all_strict, rdb_all_lax),clean_rdb_lab)
+rdb_lab <- do.call(rbind, rdb_lab_ls)
+rdb_lab %<>% mutate(RDB_Lab = paste(RDB, Lab_Criteria_Result,sep="_")) %>%
+   mutate(RDB_Lab = case_when(RDB_Lab == "TRUE_TRUE" ~ "RDB+ & Lab+",
+                             RDB_Lab == "FALSE_TRUE" ~ "RDB- & Lab+",
+                             RDB_Lab == "TRUE_FALSE" ~ "RDB+ & Lab-",
+                             RDB_Lab == "FALSE_FALSE" ~ "RDB- & Lab-",
+                             RDB_Lab == "TRUE_NA" ~ "RDB+ & Lab_NA",
+                             RDB_Lab == "FALSE_NA" ~ "RDB- & Lab_NA",
+                             TRUE ~ "NA"))
+```
+Percentage of RDB+ by each Lab criteria:
+```{r percent_rdb_by_lab}
+rdb_lab %>% 
+  mutate(Lab_Criteria = factor(Lab_Criteria, levels=c("RAR_Strict_criteria", "RAR_Aldo_criteria", "RAR_PRA_criteria",
+                                                      "RAR_Lax_criteria", "Aldo_Strict_criteria", "Aldo_Lax_criteria", 
+                                                      "PRA_Strict_criteria", "PRA_Lax_criteria", 
+                                                      "All_Strict_criteria", "All_Lax_criteria"))) %>% 
+  group_by(Lab_Criteria) %>%
+  mutate(N=sum(Freq)) %>% ungroup() %>%
+  mutate(pct = Freq/N) %>%
+  ggplot(.) + geom_bar(aes(x=RDB_Lab, y=pct, group=Lab_Criteria, fill=Lab_Criteria), stat='identity', position="dodge") +
+  scale_y_continuous(labels=percent) +
+  labs(x="RDB*Lab", y="Percentage", title="Percentages of Different RDB*Lab Groups for Each Lab Criteria") +
+  theme(plot.title = element_text(hjust=0.5))
+
+rdb_lab %>% 
+  mutate(Lab_Criteria = factor(Lab_Criteria, levels=c("RAR_Strict_criteria", "RAR_Aldo_criteria", "RAR_PRA_criteria",
+                                                      "RAR_Lax_criteria", "Aldo_Strict_criteria", "Aldo_Lax_criteria", 
+                                                      "PRA_Strict_criteria", "PRA_Lax_criteria", 
+                                                      "All_Strict_criteria", "All_Lax_criteria"))) %>% 
+  group_by(Lab_Criteria) %>%
+  mutate(N=sum(Freq)) %>% ungroup() %>%
+  mutate(pct = Freq/N) %>%
+  ggplot(.) + geom_bar(aes(x=RDB_Lab, y=Freq, group=Lab_Criteria, fill=Lab_Criteria), stat='identity', position="dodge") +
+  # scale_y_continuous(labels=percent) +
+  labs(x="RDB*Lab", y="Percentage", title="Number of Different RDB*Lab Groups for Each Lab Criteria") +
+  theme(plot.title = element_text(hjust=0.5))
+```
+The two plot above show that for discordant groups (RDB+ & Lab-, RDB- & Lab+), the percentage is dropping when using All Strict/All Lax Criteria; in the meanwhile, concordant groups (RDB+ & Lab+, RDB- & Lab-) are taking more weight.
+
+
+
+
+
+#### Discordance {-}
+```{r dis_RAR_strict_RDB, echo=FALSE}
+empi_rar_rdb <- rar_mg_db %>% group_by(EMPI) %>%
+  summarise(RAR_Strict_criteria = true_false_NA(Aldo, PRA, "RAR_Strict"), 
+            ALL_Strict_criteria = true_false_NA(Aldo, PRA, "ALL_Strict"),
+            RDB = any(PA_AVS_tot_0115, na.rm=TRUE))
+```
+##### RDB-, but RAR Strict+ (grp7) {-}
+```{r discordant_grp7}
+empi_grp7 <- empi_rar_rdb %>% filter(!RDB & RAR_Strict_criteria) %>%
+              left_join(., pts_db, by="EMPI") %>%
+              select(EMPI, PA_AVS_tot_0115)
+
+write.csv(empi_grp7, file="/home/chart_review/discordant_pts_grp7.csv", row.names = F)
+```
+There are `r nrow(empi_grp7)`
+##### RDB+, but RAR Strict- (grp8) {-}
+```{r discordant_grp8}
+empi_grp8 <- empi_rar_rdb %>% filter(RDB & !RAR_Strict_criteria) %>%
+              left_join(., pts_db, by="EMPI") %>%
+              select(EMPI, PA_AVS_tot_0115)
+
+write.csv(empi_grp8, file="/home/chart_review/discordant_pts_grp8.csv", row.names = F)
+```
+There are `r nrow(empi_grp8)`
+##### RDB+, but RAR Strict-, ALL Strict+ (grp9) {-}
+```{r discordant_grp9}
+empi_grp9 <- empi_rar_rdb %>% filter(RDB & is.na(RAR_Strict_criteria) & ALL_Strict_criteria) %>%
+              left_join(., pts_db, by="EMPI") %>%
+              select(EMPI, PA_AVS_tot_0115)
+
+write.csv(empi_grp9, file="/home/chart_review/discordant_pts_grp9.csv", row.names = F)
+```
+There are `r nrow(empi_grp9)`
+
+##### RDB+, but NO RAR Test (grp10) {-}
+```{r discordant_grp10}
+empi_grp10 <- pts %>% filter(PA_AVS_tot_0115 & is.na(Aldo) & is.na(PRA) & is.na(DRC)) %>%
+              select(EMPI, PA_AVS_tot_0115, Dx_h0_Hyperaldo_n, Dx_h0_HTN_n, time_in_sys_yr, time_enc_to_1st_hyperaldo_dx_yr)
+
+write.csv(empi_grp10, file="/home/chart_review/discordant_pts_grp10.csv", row.names = F)
+```
+There are `r nrow(empi_grp10)`. There are `r sum(pts$PA_AVS_tot_0115)`
+
+
+##### ALL Strict+, but RAR Strict- (grp11) {-}
+```{r discordant_grp11}
+empi_grp11 <- rar_mg %>% 
+                group_by(EMPI) %>%
+                summarise(ALL_Strict = true_false_NA(Aldo, PRA, "ALL_Strict"),
+                          RAR_Strict = true_false_NA(Aldo, PRA, "RAR_Strict")) %>%
+                ungroup() %>%
+                filter(ALL_Strict & is.na(RAR_Strict))
+
+
+write.csv(empi_grp11, file="/home/chart_review/discordant_pts_grp11.csv", row.names = F)
+```
+There are `r nrow(empi_grp11)`. There are `r sum(pts$PA_AVS_tot_0115)`
+
+
+
+
+
+### Union of PA Dx, Lab, RDB
+#### Union of PA(>=2), Lab (RAR strict), RDB
+Get a Whole Venn Plot:
+```{r pa_2_rar_strict_rdb}
+pa_2_rar_strict_rdb <- rar_mg %>% 
+  group_by(EMPI) %>%
+  summarise(RAR_Strict_criteria = true_false_NA(Aldo, PRA, "RAR_Strict"), 
+            PA_Dx_criteria = sum(Dx_h1_Primary_aldosteronism, na.rm=T) >= 2,
+            RDB = any(PA_AVS_tot_0115, na.rm=TRUE)) %>% ungroup()
+
+
+a1 <- sum(pa_2_rar_strict_rdb$PA_Dx_criteria)
+a2 <- sum(pa_2_rar_strict_rdb$RAR_Strict_criteria, na.rm = TRUE)
+a3 <- sum(pa_2_rar_strict_rdb$RDB)
+a12 <- sum(pa_2_rar_strict_rdb$PA_Dx_criteria & pa_2_rar_strict_rdb$RAR_Strict_criteria, na.rm = TRUE)
+a13 <- sum(pa_2_rar_strict_rdb$PA_Dx_criteria & pa_2_rar_strict_rdb$RDB, na.rm = TRUE)
+a23 <- sum(pa_2_rar_strict_rdb$RAR_Strict_criteria & pa_2_rar_strict_rdb$RDB, na.rm = TRUE)
+a123 <- sum(pa_2_rar_strict_rdb$PA_Dx_criteria & pa_2_rar_strict_rdb$RAR_Strict_criteria &
+              pa_2_rar_strict_rdb$RDB, na.rm = TRUE)
+
+VennDiagram::draw.triple.venn(area1=a1, area2=a2, area3=a3,
+                                n12=a12, n13=a13, n23=a23, n123 = a123,
+                                category=c("PA_Dx >= 2", "RAR Strict Criteria", "RDB+"),
+                                fill = c("skyblue", "pink1", "mediumorchid"), alpha = rep(0.5, 3), 
+                                cat.pos = c(0, 0, 0), cat.dist = rep(0.025, 3), lty="blank")
+```
+If right-cencoring pa and rar:
+```{r pa_2_rar_strict_rdb_right_censor}
+pa_2_rar_strict_rdb <- rar_mg_db %>% 
+  group_by(EMPI) %>%
+  summarise(RAR_Strict_criteria = true_false_NA(Aldo, PRA, "RAR_Strict"), 
+            PA_Dx_criteria = sum(Dx_h1_Primary_aldosteronism, na.rm=T) >= 2,
+            RDB = any(PA_AVS_tot_0115, na.rm=TRUE)) %>% ungroup()
+
+
+a1 <- sum(pa_2_rar_strict_rdb$PA_Dx_criteria)
+a2 <- sum(pa_2_rar_strict_rdb$RAR_Strict_criteria, na.rm = TRUE)
+a3 <- sum(pa_2_rar_strict_rdb$RDB)
+a12 <- sum(pa_2_rar_strict_rdb$PA_Dx_criteria & pa_2_rar_strict_rdb$RAR_Strict_criteria, na.rm = TRUE)
+a13 <- sum(pa_2_rar_strict_rdb$PA_Dx_criteria & pa_2_rar_strict_rdb$RDB, na.rm = TRUE)
+a23 <- sum(pa_2_rar_strict_rdb$RAR_Strict_criteria & pa_2_rar_strict_rdb$RDB, na.rm = TRUE)
+a123 <- sum(pa_2_rar_strict_rdb$PA_Dx_criteria & pa_2_rar_strict_rdb$RAR_Strict_criteria &
+              pa_2_rar_strict_rdb$RDB, na.rm = TRUE)
+
+VennDiagram::draw.triple.venn(area1=a1, area2=a2, area3=a3,
+                                n12=a12, n13=a13, n23=a23, n123 = a123,
+                                category=c("PA_Dx >= 2", "RAR Strict Criteria", "RDB+"),
+                                fill = c("skyblue", "pink1", "mediumorchid"), alpha = rep(0.5, 3), 
+                                cat.pos = c(0, 0, 0), cat.dist = rep(0.025, 3), lty="blank")
+```
+
+
+
+
+#### Union of PA(>=2) + Lab (RAR strict) + RDB
+
+#### PA(>=2) + Lab (RAR Strict) ~ RDB {-}
+
+```{r pa_2_rar_strict_to_rdb}
+pa_2_rar_strict_rdb <- rar_mg_db %>% group_by(EMPI) %>%
+  summarise(RAR_Strict_criteria = true_false_NA(Aldo, PRA, "RAR_Strict"), 
+            PA_Dx_criteria = sum(Dx_h1_Primary_aldosteronism, na.rm=T) >= 2,
+            RDB = factor(any(PA_AVS_tot_0115, na.rm=TRUE), levels=c(TRUE, FALSE))) %>% ungroup() %>%
+  mutate(PA_Lab_Criteria = factor((RAR_Strict_criteria) & PA_Dx_criteria, levels=c(T,F)))
+
+pa_2_rar_strict_rdb %>% select(PA_Lab_Criteria, RDB) %>% table(., useNA = "always")
+```
+
+```{r pa_2_all_strict_to_rdb}
+pa_2_all_strict_rdb <- rar_mg_db %>% group_by(EMPI) %>%
+  summarise(ALL_Strict_criteria = true_false_NA(Aldo, PRA, "ALL_Strict"), 
+            PA_Dx_criteria = sum(Dx_h1_Primary_aldosteronism, na.rm=T) >= 2,
+            RDB = factor(any(PA_AVS_tot_0115, na.rm=TRUE), levels=c(TRUE, FALSE))) %>% ungroup() %>%
+  mutate(PA_Lab_Criteria = factor((ALL_Strict_criteria) & PA_Dx_criteria, levels=c(T,F)))
+
+pa_2_all_strict_rdb %>% select(PA_Lab_Criteria, RDB) %>% table(., useNA = "always")
+```
+
+
+
+
+#### PA(>=2) or Lab (RAR Strict) ~ RDB {-}
+In this case, we assign: T & NA => T; F & NA => F. So there will be no missing.   
+Besides of combination of Dx and Lab test results, see how the union of the two criteria:
+```{r pa_or_lab_with_RDB}
+pa_2_or_rar_strict_rdb <- rar_mg_db %>% group_by(EMPI) %>%
+  summarise(RAR_Strict_criteria = true_false_NA(Aldo, PRA, "RAR_Strict"), 
+            PA_Dx_criteria = sum(Dx_h1_Primary_aldosteronism, na.rm=T) >= 2,
+            RDB = factor(any(PA_AVS_tot_0115, na.rm=TRUE), levels=c(TRUE, FALSE))) %>% ungroup() %>%
+  mutate(PA_Lab_Criteria = factor((!is.na(RAR_Strict_criteria) & RAR_Strict_criteria) | 
+                                    (!is.na(PA_Dx_criteria) & PA_Dx_criteria), levels=c(T,F)))
+
+pa_2_or_rar_strict_rdb %>% select(PA_Lab_Criteria, RDB) %>% table(., useNA = "always")
+```
+
+```{r pa_2_or_all_strict_to_rdb}
+pa_2_or_all_strict_rdb <- rar_mg_db %>% group_by(EMPI) %>%
+  summarise(ALL_Strict_criteria = true_false_NA(Aldo, PRA, "ALL_Strict"), 
+            PA_Dx_criteria = sum(Dx_h1_Primary_aldosteronism, na.rm=T) >= 2,
+            RDB = factor(any(PA_AVS_tot_0115, na.rm=TRUE), levels=c(TRUE, FALSE))) %>% ungroup() %>%
+  mutate(PA_Lab_Criteria = factor((!is.na(ALL_Strict_criteria) & ALL_Strict_criteria) | 
+                                    (!is.na(PA_Dx_criteria) & PA_Dx_criteria), levels=c(T,F)))
+
+pa_2_or_all_strict_rdb %>% select(PA_Lab_Criteria, RDB) %>% table(., useNA = "always")
+```
+
+```{r pa_or_dx_dt}
+foo3 <- function(lab, pa){
+  table_tmp <- rar_mg_db %>% group_by(EMPI) %>%
+  summarise(ALL_Strict_criteria = true_false_NA(Aldo, PRA, lab), 
+            PA_Dx_criteria = sum(Dx_h1_Primary_aldosteronism, na.rm=T) >= pa,
+            RDB = factor(any(PA_AVS_tot_0115, na.rm=TRUE), levels=c(TRUE, FALSE))) %>% ungroup() %>%
+  mutate(PA_Lab_Criteria = factor((!is.na(ALL_Strict_criteria) & ALL_Strict_criteria) | 
+                                    (!is.na(PA_Dx_criteria) & PA_Dx_criteria), levels=c(T,F))) %>% 
+  select(PA_Lab_Criteria, RDB) %>% table(., useNA="always")
+  
+  cri_p_rdb_p <- table_tmp[1,1]
+  cri_n_rdb_n <- table_tmp[2,2]
+  cri_p_rdb_n <- table_tmp[1,2]
+  cri_n_rdb_p <- table_tmp[2,1]
+  ms <- table_tmp[3,1] + table_tmp[3,2]
+  
+  ret <- melt(data.frame(cri_p_rdb_p,cri_n_rdb_n,cri_p_rdb_n,cri_n_rdb_p, ms), variable.name = "Type")
+  ret$PA_Criteria <- paste(">=", pa)
+  ret$Lab <- lab
+
+return(ret)
+}
+
+
+pa_or_dx_rdb_ls <- lapply(c("RAR_Strict", "ALL_Strict"), function(X){lapply(1:5, foo3, lab=X)})
+
+
+pa_or_dx <- do.call(rbind, unlist(pa_or_dx_rdb_ls, recursive = FALSE))
+
+pa_or_dx$Grp <- case_when(pa_or_dx$Type == "cri_p_rdb_p" ~ "Cri+ RDB+",
+                         pa_or_dx$Type == "cri_n_rdb_n" ~ "Cri- RDB-",
+                         pa_or_dx$Type == "cri_p_rdb_n" ~ "Cri+ RDB-", 
+                         pa_or_dx$Type == "cri_n_rdb_p" ~ "Cri- RDB+",
+                         TRUE ~ "D")
+
+```
+
+```{r pa_or_dx_plt}
+pa_or_dx %>% filter(Type != "ms") %>%
+  mutate(Grp = case_when(Type == "cri_p_rdb_p" ~ "Cri+ RDB+",
+                         Type == "cri_n_rdb_n" ~ "Cri- RDB-",
+                         Type == "cri_p_rdb_n" ~ "Cri+ RDB-", 
+                         Type == "cri_n_rdb_p" ~ "Cri- RDB+",
+                         TRUE ~ "D")) %>%
+  ggplot(.) + geom_point(aes(x=PA_Criteria, y = value, group=Lab, color=Lab)) + 
+  facet_wrap(~Grp, scales = "free_y") +
+  labs(x = "PA Dx Criteria", y = "Number of Pts", title = "Number of Patients in Each Decision Group when Unioning Dx and Lab Criteria") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+### AVS and Lab
+According to 8 different Lab criteria, the intersections are as follows:
+
+
+#### RAR Strict Criteria {-}
+```{r with_RAR_strict_AVS, echo=FALSE}
+avs_RAR_strict <- rar_mg %>% group_by(EMPI) %>%
+  summarise(RAR_Strict_criteria = factor(true_false_NA(Aldo, PRA, "RAR_Strict"), levels=c(TRUE, FALSE)), 
+            AVS = factor(any(AVS_indicator, na.rm=TRUE), levels=c(TRUE, FALSE))) %>%
+  select(AVS, RAR_Strict_criteria) %>%
+  table(., useNA="always")
+avs_RAR_strict
+```
+
+#### RAR PRA Criteria {-}
+```{r with_RAR_PRA_avs, echo=FALSE}
+avs_RAR_pra <- rar_mg %>% group_by(EMPI) %>%
+  summarise(RAR_PRA_criteria = factor(true_false_NA(Aldo, PRA, "RAR_PRA"), levels=c(TRUE, FALSE)),
+            AVS = factor(any(AVS_indicator, na.rm=TRUE), levels=c(TRUE, FALSE))) %>%
+  select(AVS, RAR_PRA_criteria) %>%
+  table(., useNA="always")
+avs_RAR_pra
+```
+
+ 
+
+#### RAR Aldo Criteria {-}
+```{r with_RAR_Aldo_AVS, echo=FALSE}
+avs_RAR_aldo <- rar_mg %>% group_by(EMPI) %>%
+  summarise(RAR_Aldo_criteria = factor(true_false_NA(Aldo, PRA, "RAR_Aldo"), levels=c(TRUE, FALSE)),
+            AVS = factor(any(AVS_indicator, na.rm=TRUE), levels=c(TRUE, FALSE))) %>% ungroup() %>%
+  select(AVS, RAR_Aldo_criteria) %>%
+  table(., useNA="always")
+avs_RAR_aldo
+```
+
+#### RAR Lax Criteria {-}
+```{r with_RAR_Lax_avs, echo=FALSE}
+avs_RAR_lax <- rar_mg %>% group_by(EMPI) %>%
+  summarise(RAR_Lax_criteria = factor(true_false_NA(Aldo, PRA, "RAR_Lax"), levels=c(TRUE, FALSE)),
+            AVS = factor(any(AVS_indicator, na.rm=TRUE), levels=c(TRUE, FALSE))) %>%
+  select(AVS, RAR_Lax_criteria) %>%
+  table(., useNA="always")
+avs_RAR_lax
+```
+
+```{r with_RAR_Lax_ppv_avs, echo=FALSE}
+prop.table(avs_RAR_lax, margin=1)
+```
+
+```{r with_RAR_Lax_sensitivity_avs, echo=FALSE}
+prop.table(avs_RAR_lax, margin=2)
+```
+
+
+
+
+#### Aldo Strict Criteria {-}
+Note that in this Criteria, only Aldo is used no matter whether the patient has PRA/DRC test.
+```{r with_Aldo_strict_avs, echo=FALSE}
+avs_aldo_strict <- rar_mg %>% group_by(EMPI) %>%
+  summarise(Aldo_Strict_criteria = factor(true_false_NA(Aldo, PRA, "Aldo_Strict"), levels=c(TRUE, FALSE)), 
+            AVS = factor(any(PA_AVS_tot_0115, na.rm=TRUE), levels=c(TRUE, FALSE))) %>%
+  select(AVS, Aldo_Strict_criteria) %>%
+  table(., useNA="always")
+avs_aldo_strict
+```
+#### Aldo Lax Criteria {-}
+Note that in this Criteria, only Aldo is used no matter whether the patient has PRA/DRC test.
+```{r with_Aldo_lax_avs, echo=FALSE}
+avs_aldo_lax <- rar_mg %>% group_by(EMPI) %>%
+  summarise(Aldo_Lax_criteria = factor(true_false_NA(Aldo, PRA, "Aldo_Lax"), levels=c(TRUE, FALSE)), 
+            AVS = factor(any(AVS_indicator, na.rm=TRUE), levels=c(TRUE, FALSE))) %>%
+  select(AVS, Aldo_Lax_criteria) %>%
+  table(., useNA="always")
+avs_aldo_lax
+```
+#### PRA Strict Criteria {-}
+Note that in this Criteria, only PRA is used no matter whether the patient has Aldo test.
+```{r with_PRA_strict_avs, echo=FALSE}
+avs_pra_strict <- rar_mg %>% group_by(EMPI) %>%
+  summarise(PRA_Strict_criteria = factor(true_false_NA(Aldo, PRA, "PRA_Strict"), levels=c(TRUE, FALSE)), 
+            AVS = factor(any(AVS_indicator, na.rm=TRUE), levels=c(TRUE, FALSE))) %>%
+  select(AVS, PRA_Strict_criteria) %>%
+  table(., useNA="always")
+avs_pra_strict
+```
+#### PRA Lax Criteria {-}
+Note that in this Criteria, only PRA is used no matter whether the patient has Aldo test.
+```{r with_PRA_lax_avs, echo=FALSE}
+avs_pra_lax <- rar_mg %>% group_by(EMPI) %>%
+  summarise(PRA_Lax_criteria = factor(true_false_NA(Aldo, PRA, "PRA_Lax"), levels=c(TRUE, FALSE)), 
+            AVS = factor(any(AVS_indicator, na.rm=TRUE), levels=c(TRUE, FALSE))) %>%
+  select(AVS, PRA_Lax_criteria) %>%
+  table(., useNA="always")
+avs_pra_lax
+```
+
+#### ALL Strict Criteria {-}
+```{r with_all_strict_avs, echo=FALSE}
+avs_all_strict <- rar_mg %>% group_by(EMPI) %>%
+  summarise(All_Strict_criteria = factor(true_false_NA(Aldo, PRA, "ALL_Strict"), levels=c(TRUE, FALSE)), 
+            AVS = factor(any(AVS_indicator, na.rm=TRUE), levels=c(TRUE, FALSE))) %>%
+  select(AVS, All_Strict_criteria) %>%
+  table(., useNA="always")
+avs_all_strict
+```
+```{r}
+temp <- rar_mg %>% group_by(EMPI) %>%
+  summarise(All_Strict_criteria = factor(true_false_NA(Aldo, PRA, "ALL_Strict"), levels=c(TRUE, FALSE)), 
+            AVS = factor(any(AVS_indicator, na.rm=TRUE), levels=c(TRUE, FALSE))) %>%
+  select(EMPI, AVS, All_Strict_criteria) %>% filter(is.na(All_Strict_criteria))
+```
+
+#### ALL Lax Criteria {-}
+
+```{r with_all_lax_avs, echo=FALSE}
+avs_all_lax <- rar_mg %>% group_by(EMPI) %>%
+  summarise(All_Lax_criteria = factor(true_false_NA(Aldo, PRA, "ALL_Lax"), levels=c(TRUE, FALSE)), 
+            AVS = factor(any(AVS_indicator, na.rm=TRUE), levels=c(TRUE, FALSE))) %>%
+  select(AVS, All_Lax_criteria) %>%
+  table(., useNA="always")
+avs_all_lax
+```
+
+
+Change Criteria and plot:
+```{r avs_lab_merge}
+clean_avs_lab <- function(x){
+  x <- as.data.frame(x)
+  
+  x$Lab_Criteria <- names(x)[2]
+  
+  names(x)[2] <- "Lab_Criteria_Result"
+  x <- x[!is.na(x$AVS),]
+  
+  return(x)
+}
+
+
+avs_lab_ls <- lapply(list(avs_RAR_strict, avs_RAR_aldo, avs_RAR_pra, avs_RAR_lax, 
+                          avs_aldo_strict, avs_aldo_lax, avs_pra_strict, avs_pra_lax, 
+                          avs_all_strict, avs_all_lax),clean_avs_lab)
+
+avs_lab <- do.call(rbind, avs_lab_ls)
+
+avs_lab %<>% mutate(AVS_Lab = paste(AVS, Lab_Criteria_Result,sep="_")) %>%
+   mutate(AVS_Lab = case_when(AVS_Lab == "TRUE_TRUE" ~ "AVS+ & Lab+",
+                             AVS_Lab == "FALSE_TRUE" ~ "AVS- & Lab+",
+                             AVS_Lab == "TRUE_FALSE" ~ "AVS+ & Lab-",
+                             AVS_Lab == "FALSE_FALSE" ~ "AVS- & Lab-",
+                             AVS_Lab == "TRUE_NA" ~ "AVS+ & Lab_NA",
+                             AVS_Lab == "FALSE_NA" ~ "AVS- & Lab_NA",
+                             TRUE ~ "NA"))
+```
+
+Percentage of RDB+ by each Lab criteria:
+```{r percent_avs_by_lab}
+avs_lab %>% 
+  mutate(Lab_Criteria = factor(Lab_Criteria, levels=c("RAR_Strict_criteria", "RAR_Aldo_criteria", "RAR_PRA_criteria",
+                                                      "RAR_Lax_criteria", "Aldo_Strict_criteria", "Aldo_Lax_criteria", 
+                                                      "PRA_Strict_criteria", "PRA_Lax_criteria", 
+                                                      "All_Strict_criteria", "All_Lax_criteria"))) %>% 
+  group_by(Lab_Criteria) %>%
+  mutate(N=sum(Freq)) %>% ungroup() %>%
+  mutate(pct = Freq/N) %>%
+  ggplot(.) + geom_bar(aes(x=AVS_Lab, y=pct, group=Lab_Criteria, fill=Lab_Criteria), stat='identity', position="dodge") +
+  scale_y_continuous(labels=percent) +
+  labs(x="AVS*Lab", y="Percentage", title="Percentages of Different AVS*Lab Groups for Each Lab Criteria") +
+  theme(plot.title = element_text(hjust=0.5))
+
+avs_lab %>% 
+  mutate(Lab_Criteria = factor(Lab_Criteria, levels=c("RAR_Strict_criteria", "RAR_Aldo_criteria", "RAR_PRA_criteria",
+                                                      "RAR_Lax_criteria", "Aldo_Strict_criteria", "Aldo_Lax_criteria", 
+                                                      "PRA_Strict_criteria", "PRA_Lax_criteria", 
+                                                      "All_Strict_criteria", "All_Lax_criteria"))) %>% 
+  group_by(Lab_Criteria) %>%
+  mutate(N=sum(Freq)) %>% ungroup() %>%
+  mutate(pct = Freq/N) %>%
+  ggplot(.) + geom_bar(aes(x=AVS_Lab, y=Freq, group=Lab_Criteria, fill=Lab_Criteria), stat='identity', position="dodge") +
+  # scale_y_continuous(labels=percent) +
+  labs(x="AVS*Lab", y="Percentage", title="Number of Different AVS*Lab Groups for Each Lab Criteria") +
+  theme(plot.title = element_text(hjust=0.5))
+```
+The two plot above show that for discordant groups (AVS+ & Lab-, AVS- & Lab+), the percentage is dropping when using All Strict/All Lax Criteria; in the meanwhile, concordant groups (RDB+ & Lab+, RDB- & Lab-) are taking more weight.
+
+
+
+

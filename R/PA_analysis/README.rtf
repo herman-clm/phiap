@@ -1,0 +1,90 @@
+{\rtf1\ansi\ansicpg1252\cocoartf1504\cocoasubrtf830
+{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\margl1440\margr1440\vieww16740\viewh12400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 This is the explanatory file for the RAR patient and encounter level data\
+Files: RAR.for_biostats\
+Version: 08-23-2017\
+\
+There are two shared data files: "
+\b bios_enc_level.csv
+\b0 " and "
+\b bios_pt_level.csv
+\b0 ". The first one is the records at Encounter Level, the second is aggregated on Patient Level. Some information is shared between two data sets, such as the Outcome, Race, etc.\
+\
+In general,\
+
+\b DE_PT_ID
+\b0 : the unique study-generated identifier for Patient\
+
+\b DE_EMPI_DATE_ID
+\b0 : the unique study-generated identifier for encounters (defined as date of service)\
+
+\b \
+< Adjudicated \'93outcome\'94 >\
+PA_AVS_tot_0115
+\b0 : the outcome variable from research database file \'93AVS- total patient list 2001-2015.xlsx\'94. TRUE = present in file (PA case). FALSE= absent from file (PA non-case).\
+
+\b \
+< Diagnosis codes >\
+244.9
+\b0  ~ 
+\b V70.0
+\b0 : diagnosis codes for primary aldosterone, hypertension, and related codes\
+    - In encounter level file, these diagnosis codes are binary, representing for Exist/Non-exist for each encounter [Encounter level]\
+    - In patient level file, these diagnosis codes are counted numbers for how many times each code was found for each patient [Patient level]\
+* Note, switch from ICD9 to ICD10 codes on 10/2015\
+
+\b \
+< Lab tests >\
+Aldo
+\b0 : serum aldosterone test result values\
+
+\b DRC
+\b0 : serum direct renin concentration (renin test)\
+
+\b PRA
+\b0 : plasma renin activity (renin test)\
+    - In encounter level, these 3 tests are for each encounter\
+    - In patient level, these 3 tests are aggregated, by choosing for each patient the latest encounter with an aldosterone and renin result\
+* Note, should calculate the Aldo:PRA and Aldo:DRC ratio (which is the standard clinical ratio used for screening/diagnosis)
+\b \
+\
+< Vitals >\
+BP_SYSTOLIC
+\b0 /
+\b BP_DIASTOLIC
+\b0 : systolic/diastolic blood pressure measures [Encounter level only]\
+
+\b SBP_n
+\b0 /
+\b DBP_n
+\b0 : high SBP/DBP counts (for SBP, >= 140; for DBP, >= 90) [Patient level]\
+
+\b High_BP_n
+\b0 : high blood pressure criteria counts (SBP >= 140 or DBP >= 90) [Patient level]\
+
+\b High_BP_prop
+\b0 : the proportion of blood pressures that meet high blood pressure criteria [Patient level]\
+
+\b \
+< Demographics >\
+GENDER_MASTER_CODE
+\b0 : patient gender\
+
+\b RACE_MASTER_CODE
+\b0 : patient ethnicity\
+
+\b RACE_MASTER_HISPANIC_YN
+\b0 : binary indicator for hispanic or not\
+
+\b Age
+\b0 :\
+    - In encounter level, patient's age when the encounter happened\
+    - In patient level, the age is when the Aldosterone/renin tests were collected\
+\
+\
+}

@@ -1,0 +1,269 @@
+---
+title: "AVS_total_2001_2015.explore"
+output: html_document
+---
+
+```{r}
+library(data.table)
+library(readxl)
+library(lubridate)
+
+```
+
+```{r load_data}
+# read in AVS data
+AVS_pts <- read_excel(path = "/data/raw_data/PA/Debbie_DB/AVS- total patient list 2001-2015.xlsx", sheet = "Sheet1")
+AVS_pts <- na.omit(AVS_pts)
+
+foo <- function(x, year=1999){
+  m <- year(x) %% 100
+  year(x) <- ifelse(m > year %% 100, 1900+m, 2000+m)
+  x
+}
+
+
+AVS_pts$enctr_date <- as.POSIXct(AVS_pts$enctr_date, format="%d-%b-%y")
+AVS_pts$date_birth <- foo(as.POSIXct(AVS_pts$date_birth, format="%d-%b-%y"), year = 2000)
+
+nrow(AVS_pts) # 487
+length(unique(AVS_pts$hosp_num)) # 458
+
+# 28 patients have more than 1 AVS
+AVS_pts %>% group_by(hosp_num) %>% 
+  summarise(N =n()) %>%
+  filter(N != 1)
+
+
+# read in EMPI ~ MRN for RAR patients
+empi_MRN <- fread(input = "/data/raw_data/PA/HERMANDA_RAR_EMPI_MRN.csv", header=TRUE)
+empi_MRN <- as.tibble(empi_MRN)
+empi_MRN %<>% mutate_at(vars(EMPI, PATIENT_IDENTIFIER), funs(as.character))
+
+
+length(unique(empi_MRN$EMPI)) # 7137
+length(unique(empi_MRN$PATIENT_IDENTIFIER)) # 25621
+
+
+# 4 PATIENT_IDENTIFIER have multiple (2) EMPI's
+empi_MRN %>% group_by(PATIENT_IDENTIFIER) %>%
+  summarise(N = n_distinct(EMPI)) %>%
+  filter(N != 1)
+# but none of them is in AVS
+temp <- empi_MRN %>% group_by(PATIENT_IDENTIFIER) %>%
+  summarise(N = n_distinct(EMPI)) %>%
+  filter(N != 1)
+sum(AVS_pts$hosp_num %in% temp$PATIENT_IDENTIFIER)
+
+
+
+sum(AVS_pts$hosp_num %in% empi_MRN$PATIENT_IDENTIFIER) # 88 AVS found in RAR data set
+
+```
+
+
+```{r}
+head(AVS_pts)
+```
+
+```{r}
+head(empi_MRN)
+```
+
+
+```{r merge}
+# Since one PATIENT_IDENTIFIER has only one EMPI for AVS, then only keep PATIENT_IDENTIFIER and EMPI, i.e., remove unuseful info
+empi <- empi_MRN %>% select(c(PATIENT_IDENTIFIER, EMPI)) %>%
+          group_by(PATIENT_IDENTIFIER, EMPI) %>%
+          slice(1) %>%
+          ungroup()
+
+test_merge <- AVS_pts %>% left_join(., empi, by = c("hosp_num" = "PATIENT_IDENTIFIER")) # 487 rows
+
+length(unique(test_merge$hosp_num)) # 458
+
+
+temp <- test_merge %>% mutate(year = year(enctr_date), n_found = !is.na(EMPI))
+
+View(temp)
+
+tmp %>%
+  group_by(enctr_year) %>%
+  summarize(n=n(),
+            f_found = sum(n_found)/n()) %>%
+  ungroup() %>%
+  arrange((enctr_year))
+
+
+```
+A brief check on those missing
+```{r}
+# 2001 - 2011
+test_merge %>% filter(year(enctr_date) %in% c(2001:2011))
+
+# 2012 - 2015: Missing
+test_merge %>% filter(year(enctr_date) %in% c(2012:2015) & is.na(EMPI))
+
+# 2012 - 2015: Non-Missing
+test_merge %>% filter(year(enctr_date) %in% c(2012:2015) & !is.na(EMPI))
+
+```
+
+
+```{r}
+load("bios_data.RData")
+
+
+"1001676662" %in% as.character(rar_enc$EMPI)
+"1003004990" %in% as.character(rar_enc$EMPI)
+
+
+
+# we are missing this patient
+"1001234033" %in% as.character(rar_enc$EMPI)
+"1001234033" %in% as.character(rar_dx$EMPI)
+"1001234033" %in% as.character(rar_lab$EMPI) 
+
+
+
+
+"005999552" %in% test_merge$hosp_num
+
+"1001234033" %in% empi$EMPI # TRUE
+empi %>% filter(EMPI == "1001234033") 
+## His MRN is not in.... because it changed 005999552 into 5999552....
+
+
+"1001234033" %in% test_merge$EMPI 
+
+"005999552" %in% AVS_pts$hosp_num
+
+"5999552" %in% empi$PATIENT_IDENTIFIER
+
+```
+
+For patient 040301418 (2002), he is not in HERMANDA_RAR_PTS_ENC.csv. And he is not our patient.
+For patient 052448594 (2005), he is not in HERMANDA_RAR_PTS_ENC.csv. And he is not our patient.
+For patient 005999552 (2006), he is in HERMANDA_RAR_PTS_ENC.csv.
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r Merging using all numbers (resolving the issue of num or char)}
+AVS_pts <- read_excel(path = "/data/raw_data/PA/Debbie_DB/AVS- total patient list 2001-2015.xlsx", sheet = "Sheet1")
+AVS_pts <- na.omit(AVS_pts)
+
+foo <- function(x, year=1999){
+  m <- year(x) %% 100
+  year(x) <- ifelse(m > year %% 100, 1900+m, 2000+m)
+  x
+}
+
+
+AVS_pts$enctr_date <- as.POSIXct(AVS_pts$enctr_date, format="%d-%b-%y")
+AVS_pts$date_birth <- foo(as.POSIXct(AVS_pts$date_birth, format="%d-%b-%y"), year = 2000)
+
+
+# check hosp_num
+class(AVS_pts$hosp_num) # character
+table(nchar(AVS_pts$hosp_num)) # all 9's
+
+
+
+# AVS_pts$hosp_num <- as.numeric(AVS_pts$hosp_num)
+
+
+
+# read in EMPI ~ MRN for RAR patients
+empi_MRN <- fread(input = "/data/raw_data/PA/HERMANDA_RAR_EMPI_MRN.csv", header=TRUE)
+empi_MRN <- as.tibble(empi_MRN)
+empi_MRN %<>% mutate_at(vars(EMPI, MRN), funs(as.character))
+
+
+# length(unique(empi_MRN$EMPI)) # 7137
+# length(unique(empi_MRN$PATIENT_IDENTIFIER)) # 25621
+
+# 
+# # 4 PATIENT_IDENTIFIER have multiple (2) EMPI's
+# empi_MRN %>% group_by(PATIENT_IDENTIFIER) %>%
+#   summarise(N = n_distinct(EMPI)) %>%
+#   filter(N != 1)
+# # but none of them is in AVS
+# temp <- empi_MRN %>% group_by(PATIENT_IDENTIFIER) %>%
+#   summarise(N = n_distinct(EMPI)) %>%
+#   filter(N != 1)
+# sum(AVS_pts$hosp_num %in% temp$PATIENT_IDENTIFIER)
+
+
+
+# sum(AVS_pts$hosp_num %in% empi_MRN$PATIENT_IDENTIFIER) # 88 AVS found in RAR data set
+
+
+
+# Since one PATIENT_IDENTIFIER has only one EMPI for AVS, then only keep PATIENT_IDENTIFIER and EMPI, i.e., remove unuseful info
+empi_char <- empi_MRN %>% select(c(MRN, EMPI)) %>%
+          group_by(MRN, EMPI) %>%
+          slice(1) %>%
+          ungroup() %>%
+          mutate_at(vars(MRN), funs(str_pad(., 9, pad="0")))
+
+
+
+
+empi_num <- empi_MRN %>% select(c(PATIENT_IDENTIFIER_NUM, EMPI)) %>%
+          group_by(PATIENT_IDENTIFIER_NUM, EMPI) %>%
+          slice(1) %>%
+          ungroup()
+
+
+test_merge_char <- AVS_pts  %>% left_join(., empi_char, by = c("hosp_num" = "MRN")) # 487 rows
+
+test_merge_num <- AVS_pts %>% mutate_at(vars(hosp_num), funs(as.numeric))%>% left_join(., empi_num, by = c("hosp_num" = "PATIENT_IDENTIFIER_NUM")) # 487 rows
+
+length(unique(test_merge_char$hosp_num)) # 458
+
+
+ep_char <- unique(test_merge_char$EMPI)
+ep_num <- unique(test_merge_num$EMPI)
+
+
+identical(ep_char, ep_num) # TRUE !!!
+
+
+sum(!is.na(test_merge_num$EMPI)) # 377 !
+length(unique(research_db$EMPI)) # 362 unique EMPI ! (361 excluding NA)
+
+```
+
+```{r}
+# Take a look at the missings
+temp <- test_merge_char %>% mutate(year = year(enctr_date), n_found = !is.na(EMPI))
+
+View(temp)
+
+tmp %>%
+  group_by(enctr_year) %>%
+  summarize(n=n(),
+            f_found = sum(n_found)/n()) %>%
+  ungroup() %>%
+  arrange((enctr_year))
+
+```
+
+
+
+
+
+
+
+
+```
+

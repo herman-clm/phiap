@@ -1,0 +1,98 @@
+---
+title: "Adding notes to encounter data --v0.2.3"
+output: 
+  html_document:
+    theme: journal
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    fig_width: 15
+    fig_height: 8
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, autodep=TRUE)
+
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, 
+                      message = FALSE)
+
+suppressMessages(library(reshape2))
+suppressMessages(library(lubridate))
+suppressMessages(library(gridExtra))
+
+suppressMessages(library(tidyverse))
+suppressMessages(library(magrittr))
+suppressMessages(library(ini))
+suppressMessages(library(ggplot2))
+suppressMessages(library(kableExtra))
+suppressMessages(library(knitr))
+suppressMessages(library(scales))
+suppressMessages(library(reporttools))
+suppressMessages(library(readxl))
+suppressMessages(library(gtools))
+source("../../common_anal/R_fxns.R")
+
+```
+
+
+```{r load_data, include=FALSE, cache=TRUE, cache.lazy=FALSE}
+load("/data/processed_data/RAR/bios_data_enc_pts_v0.2.3.RData")
+```
+
+
+```{r}
+names(rar_mg)
+```
+
+```{r}
+all_ind <- (rar_mg$Aldo >= 15 & rar_mg$PRA <= 0.5) | (rar_mg$PA_AVS_tot_0115) | (rar_mg$AVS_indicator)
+all_ind <- ifelse(is.na(all_ind), FALSE, all_ind)
+summary(all_ind)
+```
+
+## Fit by non-normalized counts
+```{r}
+cols.ct <- names(rar_mg)[grepl("^re_|NOTE_n", names(rar_mg))]
+
+df <- data.frame()
+for(i in cols.ct){
+  ct <- unlist(rar_mg[,i])
+  ct.fit <- glm(all_ind ~ ct, family = 'binomial')
+  
+  coef.v <- coef(summary(ct.fit))
+  df_tmp <- data.frame(var.name = i, coef = coef.v[2,1], p.value = coef.v[2,4])
+  df <- rbind(df, df_tmp)
+  
+}
+df
+```
+
+
+
+
+## Normalize counts by number of notes (NOTE_n)
+```{r}
+cols.ct_no_NOTE <- names(rar_mg)[grepl("^re_", names(rar_mg))]
+
+df_norm_by_note <- data.frame()
+for(i in cols.ct_no_NOTE){
+  
+  ct <- rar_mg %>% pull(i)
+  ct <- ct/rar_mg$NOTE_n
+  ct.fit <- glm(all_ind ~ ct, family = 'binomial')
+  
+  coef.v <- coef(summary(ct.fit))
+  df_tmp <- data.frame(var.name = i, coef = coef.v[2,1], p.value = coef.v[2,4])
+  df_norm_by_note <- rbind(df_norm_by_note, df_tmp)
+  
+}
+df_norm_by_note
+```
+```{r}
+merge(df, df_norm_by_note, by="var.name")
+```
+
+
+
+

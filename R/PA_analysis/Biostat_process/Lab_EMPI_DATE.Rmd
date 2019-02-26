@@ -1,0 +1,188 @@
+---
+title: "Lab to EMPI_DATE"
+output: html_document
+---
+
+```{r}
+
+```
+
+```{r}
+library(ini)
+config <- read.ini("../../config.ini")
+
+# set directory
+working_dir <- paste(config$Directories$repos_dir, config$Directories$working_dir_suffix, sep = "/")
+
+output_dir <- paste(config$Directories$repos_dir, config$Directories$output_dir_suffix, sep = "/")
+out_root <- config$RAR$out_root
+
+```
+
+
+```{r setup, include=FALSE, cache=TRUE, root.dir=working_dir}
+knitr::opts_chunk$set(echo = TRUE)
+opts_knit$set(root.dir = working_dir)
+library(dplyr)
+library(data.table)
+library(tibble)
+suppressMessages(library(tidyr))
+setwd(working_dir)
+source("../../common_anal/RAR_fxns.R", chdir = TRUE)
+
+```
+
+
+### Collapse into EMPI_DATE level
+```{r load_lab, cache=TRUE}
+lab_raw <- load_Lab(dat_file = "/data/raw_data/PA/HERMANDA_RAR_PTS_LABS.csv", lab_source = "ALL",
+                    adjust_up = 1.5, adjust_down = 0.5)
+
+lab <- clean_Lab(dat = lab_raw, RAR_only = FALSE, potassium_in = TRUE,
+                         num_labs=44)
+
+```
+temp is in PK_ORDER_ID + RESULT_ITEM_CODE level. Next step is to collapse it into EMPI_DATE level.
+
+
+Use previous function to deal with RAR Labs
+```{r RAR-labs, cache=TRUE, dependson=c("load_lab")}
+rar_lab <- subset(lab, Test %in% c("PRA", "DRC", "Aldo"))
+rar_lab_collapse <- collapse_RAR_Lab(dat=rar_lab, EMPI_DATE_Level = TRUE)
+```
+
+
+For other labs
+```{r gen-other, cache=TRUE, dependson=c("load_lab", "RAR-labs")}
+other_lab <- subset(lab, !(Test %in% c("PRA", "DRC", "Aldo")))
+nrow(other_lab) # 3746487 rows: PK_ORDER_ID + RIC
+length(unique(other_lab$Test)) # 45 other lab tests
+length(unique(other_lab$EMPI_DATE)) # 159455 unique EMPI_DATE
+```
+
+```{r ID_for-other, dependson=c("load_lab", "RAR-labs", "gen-other")}
+temp <- paste(other_lab$EMPI_DATE, other_lab$RESULT_ITEM_CODE)
+length(unique(temp)) # 2856910 - Goal for other_lab_EMPI_DATE_RIC
+```
+This means that for some EMPI_DATE, there are some multiple same tests taken. So split:
+
+```{r New_ID, cache=TRUE, dependson=c("load_lab")}
+# create a new temporary ID: EMPI_DATE + RESULT_ITEM_CODE
+other_lab$EMPI_DATE_RIC <- paste(other_lab$EMPI_DATE, other_lab$RESULT_ITEM_CODE)
+dups <- other_lab[duplicated(other_lab$EMPI_DATE_RIC), 'EMPI_DATE_RIC']
+r0 <- subset(other_lab, !(EMPI_DATE_RIC %in% dups$EMPI_DATE_RIC))
+r1 <- subset(other_lab, EMPI_DATE_RIC %in% dups$EMPI_DATE_RIC)
+length(unique(r1$EMPI_DATE_RIC))  # 199134 - Goal for r1
+
+
+tpp <- paste(other_lab$EMPI_DATE_RIC, other_lab$PK_ORDER_ID)
+
+sum(duplicated(tpp)) # 0
+```
+
+The sum equal to 0, which means in each EMPI_DATE_RIC, there is only one PK_ORDER_ID.   
+Do another check on ORDER_START_DATE
+```{r EMPI_DATE_RIC_OSD, cache=TRUE, dependson=c("load_lab")}
+tpp2 <- paste(r1$EMPI_DATE_RIC, r1$ORDER_START_DATE)
+sum(duplicated(tpp2))
+```
+For this combination, there are duplicates.
+
+```{r check-dups, cache=TRUE, dependson=c("load_lab")}
+head(tpp2[duplicated(tpp2)])
+r1$temp <- paste(r1$EMPI_DATE_RIC, r1$ORDER_START_DATE)
+
+r1 %>% filter(temp == "1001377480 1999-03-27 ALKALINE PHOSPHATASE 1999-03-27 07:16:00") %>% print.data.frame()
+```
+The result shows that the same test was performed from different order: LIVER FUNCTIONAL PANEL & CMP. --> Take the median
+```{r median-for-same-test, cache=TRUE, dependson=c("load_lab")}
+temp <- r1 %>% group_by(EMPI_DATE_RIC, ORDER_START_DATE) %>% mutate_at(vars(RESULT_VALUE), funs(median(., na.rm=TRUE))) %>% slice(1)
+
+nrow(temp) + sum(duplicated(tpp2)) == nrow(r1)
+```
+The TRUE result means now for r1, EMPI_DATE_RIC + ORDER_START_DATE is unique. Now, select by count of ORDER_START_DATE (then arbitrary PK_ORDER_ID) for each EMPI_DATE:
+```{r apply-to-r1, cache=TRUE, dependson=c("load_lab")}
+r1 %<>% group_by(EMPI_DATE_RIC, ORDER_START_DATE) %>% mutate_at(vars(RESULT_VALUE), funs(median(., na.rm=TRUE))) %>% slice(1)
+
+r1$EMPI_DATE_OSD <- paste(r1$EMPI_DATE, r1$ORDER_START_DATE)
+temp <- r1 %>% group_by(EMPI_DATE_OSD) %>% summarize(N=n()) %>% ungroup() %>% full_join(., r1, by = "EMPI_DATE_OSD") %>% group_by(EMPI_DATE_RIC) %>% arrange(desc(N), desc(PK_ORDER_ID)) %>% slice(1)
+
+nrow(temp) == 199134
+```
+The result is TRUE, which means now the data is on EMPI_DATE_RIC level.
+```{r r1, cache=TRUE, dependson=c("load_lab")}
+r1 <- temp
+```
+
+
+
+Combine back r0 and r1. Then Spread into EMPI_DATE table. Since unit of measure is also important, combine it with Test
+```{r merge-r0-r1, cache=TRUE, dependson=c("load_lab")}
+other_lab_EMPI_DATE_RIC <- r0 %>% bind_rows(., r1)
+
+length(unique(other_lab_EMPI_DATE_RIC$EMPI_DATE_RIC)) == length(unique(other_lab$EMPI_DATE_RIC))
+# other_lab_EMPI_DATE_RIC$Test <- paste(other_lab_EMPI_DATE_RIC$Test, other_lab_EMPI_DATE_RIC$UNIT_OF_MEASURE, sep = "_")
+```
+TRUE: cleaning does not cause loss in EMPI_DATE date
+
+
+#### Harmonize Unites
+```{r units, cache=TRUE, dependson=c("load_lab")}
+other_lab_EMPI_DATE_RIC %>% group_by(RESULT_ITEM_CODE, UNIT_OF_MEASURE) %>% summarize(N = n()) %>% print.data.frame()
+```
+Harmonize units: for now, only select the highest count one for each RESULT_ITEM_CODE
+```{r harmonize-units, cache=TRUE, dependson=c("load_lab")}
+other_lab_EMPI_DATE_RIC$RIC_units <- paste(other_lab_EMPI_DATE_RIC$RESULT_ITEM_CODE, other_lab_EMPI_DATE_RIC$UNIT_OF_MEASURE)
+
+RIC_units_select <- other_lab_EMPI_DATE_RIC %>% group_by(RESULT_ITEM_CODE, UNIT_OF_MEASURE) %>% summarise(N = n()) %>% arrange(desc(N)) %>% slice(1)
+
+print.data.frame(RIC_units_select)
+
+```
+Some units are NA:
+```{r NA-units, cache=TRUE, dependson=c("load_lab")}
+other_lab_EMPI_DATE_RIC %>% filter(RESULT_ITEM_CODE == "ANION GAP" | RESULT_ITEM_CODE == "INR") %>% group_by(RESULT_ITEM_CODE,UNIT_OF_MEASURE) %>% summarise(mean = mean(RESULT_VALUE, na.rm=T), min = min(RESULT_VALUE, na.rm=T), max = max(RESULT_VALUE, na.rm=T),N = n()) %>% print.data.frame()
+```
+NOTE: for ANION GAP, the range seems okay. But for INR, the range (should be around 1 ~ 5) is strange... but the N is siginificantly high, so just keep it now.   
+Based on RIC_units_select, select from other_lab_EMPI_DATE_RIC:
+```{r select-units, cache=TRUE, dependson=c("load_lab")}
+RIC_units_select$RIC_unit <- paste(RIC_units_select$RESULT_ITEM_CODE, RIC_units_select$UNIT_OF_MEASURE)
+other_lab_EMPI_DATE_RIC %<>% filter(RIC_units %in% RIC_units_select$RIC_unit) %>% ungroup()
+
+other_lab_EMPI_DATE_RIC %>% group_by(RESULT_ITEM_CODE, UNIT_OF_MEASURE) %>% summarize(N = n()) %>% print.data.frame()
+```
+Now the units are unique for each RESULT_ITEM_CODE.
+
+Remove cols to spread:
+```{r, cache=TRUE, dependson=c("load_lab")}
+other_lab_EMPI_DATE_RIC$Test <- paste(other_lab_EMPI_DATE_RIC$Test, other_lab_EMPI_DATE_RIC$UNIT_OF_MEASURE, sep = "_")
+other_lab_EMPI_DATE_RIC %<>% select(EMPI_DATE, Test, RESULT_VALUE)
+
+other_lab_EMPI_DATE <- other_lab_EMPI_DATE_RIC %>% spread(., key = Test, value = RESULT_VALUE, sep = "_")
+
+nrow(other_lab_EMPI_DATE) < length(unique(other_lab$EMPI_DATE))
+```
+It is less than EMPI_DATE in other_lab, because some are lost in picking units step, but not so many of them.   
+
+Should add EMPI and ENC_DATE back
+```{r re-assign-EMPI-Date, cache=TRUE, dependson=c("load_lab")}
+other_lab_EMPI_DATE$EMPI <- substr(other_lab_EMPI_DATE$EMPI_DATE, 1, 10)
+other_lab_EMPI_DATE$ENC_DATE <- as.Date(substr(other_lab_EMPI_DATE$EMPI_DATE, 12, 21), format = "%Y-%m-%d")
+```
+
+To make rar_lab_collapse compatible with other_lab_EMPI_DATE, remove/refine columns in rar_lab_collapse:
+```{r, cache=TRUE, dependson=c("load_lab")}
+rar_lab_collapse %<>% select(-c(PK_ENCOUNTER_ID, ORDER_START_DATE))
+rar_lab_collapse$ENC_DATE <- as.Date(rar_lab_collapse$ENC_DATE)
+```
+
+Merge rar_lab_collapse and other_lab_EMPI_DATE:
+```{r merge, cache=TRUE, dependson=c("load_lab")}
+temp_EMPI_DATE <- append(rar_lab_collapse$EMPI_DATE, other_lab_EMPI_DATE$EMPI_DATE)
+length(unique(temp_EMPI_DATE)) # 161330
+temp <- full_join(rar_lab_collapse, other_lab_EMPI_DATE, by = "EMPI_DATE")
+nrow(temp)
+```
+Lost some, but not so many!
+
+
