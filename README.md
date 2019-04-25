@@ -8,7 +8,7 @@ output:
 
 ## Summary
 
-This repository (https://bitbucket.org/hermanlab/phiap) contains the code for the manuscript submitted to Arxiv (______ ). This manuscript describes the development of a novel maximum likelihood approach that efficiently leverages data from anchor-positive and unlabeled patients to develop logistic regression models for electronic health record phenotyping. Additionally, we described novel statistical methods for estimating phenotyping prevalence and assessing model calibration and predictive performance measures. The method was evaluated by extensive simulation and application to identify patients with primary aldosteronism in Penn Medicine.
+This repository (https://bitbucket.org/hermanlab/phiap) contains the code for the manuscript submitted to [arxiv](https://arxiv.org/abs/1902.10060). This manuscript describes the development of a novel maximum likelihood approach that efficiently leverages data from anchor-positive and unlabeled patients to develop logistic regression models for electronic health record phenotyping. Additionally, we described novel statistical methods for estimating phenotyping prevalence and assessing model calibration and predictive performance measures. The method was evaluated by extensive simulation and application to identify patients with primary aldosteronism in Penn Medicine.
 
 Primary aldosteronism (PA) causes ~5% of high blood pressure and is highly treatable, but is dramatically underdiagnosed. By applying this positive-only learning approach, we were able to identify PA patients that were not in our labeled training set
 
