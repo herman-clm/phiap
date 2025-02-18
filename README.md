@@ -1,14 +1,12 @@
----
-output:
-  pdf_document: default
-  html_document: default
----
-
 # Electronic Health Record Phenotyping with Internally Assessable Performance (PhIAP) using Anchor-Positive and Unlabeled Patients
 
 ## Summary
 
-This repository (https://bitbucket.org/hermanlab/phiap) contains the code for the manuscript submitted to [arxiv](https://arxiv.org/abs/1902.10060). This manuscript describes the development of a novel maximum likelihood approach that efficiently leverages data from anchor-positive and unlabeled patients to develop logistic regression models for electronic health record phenotyping. Additionally, we described novel statistical methods for estimating phenotyping prevalence and assessing model calibration and predictive performance measures. The method was evaluated by extensive simulation and application to identify patients with primary aldosteronism in Penn Medicine.
+This repository (https://github.com/herman-clm/phiap) contains the code for the paper:
+
+Lingjiao Zhang, Xiruo Ding, Yanyuan Ma, Naveen Muthu, Imran Ajmal, Jason H Moore, Daniel S Herman, Jinbo Chen, A maximum likelihood approach to electronic health record phenotyping using positive and unlabeled patients, Journal of the American Medical Informatics Association, Volume 27, Issue 1, January 2020, Pages 119–126, [https://doi.org/10.1093/jamia/ocz170](https://doi.org/10.1093/jamia/ocz170)
+
+This paper describes the development of a novel maximum likelihood approach that efficiently leverages data from anchor-positive and unlabeled patients to develop logistic regression models for electronic health record phenotyping. Additionally, we described novel statistical methods for estimating phenotyping prevalence and assessing model calibration and predictive performance measures. The method was evaluated by extensive simulation and application to identify patients with primary aldosteronism in Penn Medicine.
 
 Primary aldosteronism (PA) causes ~5% of high blood pressure and is highly treatable, but is dramatically underdiagnosed. By applying this positive-only learning approach, we were able to identify PA patients that were not in our labeled training set
 
